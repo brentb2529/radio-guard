@@ -1,0 +1,3 @@
+fake z2m connected Success
+fake z2m got zigbee2mqtt/bridge/request/backup b'{}'
+fake z2m got zigbee2mqtt/bridge/request/backup b'{"transaction": "rg-1"}'

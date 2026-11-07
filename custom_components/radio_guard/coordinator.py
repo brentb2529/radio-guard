@@ -127,6 +127,14 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
 
     # --------------------------------------------------------- lifecycle
 
+    async def async_setup_sources(self) -> None:
+        """Let sources acquire subscriptions before the first refresh."""
+        for st in self.states.values():
+            try:
+                await st.source.async_setup()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Source %s setup deferred", st.source.id, exc_info=True)
+
     async def async_start(self) -> None:
         hour = int(self._opt(CONF_BACKUP_HOUR, DEFAULT_BACKUP_HOUR))
         minute = int(self._opt(CONF_BACKUP_MINUTE, DEFAULT_BACKUP_MINUTE))
@@ -144,6 +152,11 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        for st in self.states.values():
+            try:
+                await st.source.async_teardown()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Source %s teardown failed", st.source.id, exc_info=True)
 
     # ------------------------------------------------------------ polling
 

@@ -53,57 +53,105 @@ class Zigbee2MQTTSource(BackupSource):
     def __init__(self, hass: HomeAssistant, base_topic: str) -> None:
         super().__init__(hass)
         self.base_topic = base_topic.rstrip("/")
+        self._info: dict[str, Any] = {}
+        self._info_event = asyncio.Event()
+        self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._unsubs: list = []
+        self._seq = 0
 
     # ------------------------------------------------------------ helpers
 
     def available(self) -> bool:
         return "mqtt" in self.hass.config.components
 
-    async def _request(self, name: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
-        """Send a bridge request and wait for its response."""
+    async def async_setup(self) -> None:
+        """Hold subscriptions for the source's lifetime.
+
+        HA batches MQTT subscriptions, so subscribing and publishing a request
+        in the same breath can miss the reply. Subscribing once up front also
+        gives us the retained bridge/info for free.
+        """
+        if self._unsubs or not self.available():
+            return
         from homeassistant.components import mqtt  # noqa: PLC0415
 
-        req = f"{self.base_topic}/bridge/request/{name}"
-        resp = f"{self.base_topic}/bridge/response/{name}"
-        fut: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
+        await mqtt.async_wait_for_mqtt_client(self.hass)
 
         @callback
-        def _on_msg(msg: mqtt.ReceiveMessage) -> None:
-            if fut.done():
-                return
+        def _on_info(msg: mqtt.ReceiveMessage) -> None:
             try:
-                fut.set_result(json.loads(msg.payload))
-            except ValueError as err:
-                fut.set_exception(ValueError(f"Bad JSON from Z2M: {err}"))
+                self._info = json.loads(msg.payload) or {}
+            except ValueError:
+                return
+            self._info_event.set()
 
-        unsub = await mqtt.async_subscribe(self.hass, resp, _on_msg, qos=1)
-        try:
-            await mqtt.async_publish(self.hass, req, json.dumps(payload), qos=1)
-            return await asyncio.wait_for(fut, timeout)
-        finally:
+        @callback
+        def _on_backup_resp(msg: mqtt.ReceiveMessage) -> None:
+            try:
+                resp = json.loads(msg.payload)
+            except ValueError:
+                _LOGGER.warning("Bad JSON on %s", msg.topic)
+                return
+            txn = str(resp.get("transaction", ""))
+            fut = self._pending.pop(txn, None)
+            if fut is None and len(self._pending) == 1:
+                # Older Z2M without transaction echo: deliver to the one waiter.
+                fut = self._pending.pop(next(iter(self._pending)))
+            if fut is not None and not fut.done():
+                fut.set_result(resp)
+
+        self._unsubs.append(
+            await mqtt.async_subscribe(self.hass, f"{self.base_topic}/bridge/info", _on_info, qos=1)
+        )
+        self._unsubs.append(
+            await mqtt.async_subscribe(
+                self.hass, f"{self.base_topic}/bridge/response/backup", _on_backup_resp, qos=1
+            )
+        )
+
+    async def async_teardown(self) -> None:
+        for unsub in self._unsubs:
             unsub()
+        self._unsubs.clear()
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.cancel()
+        self._pending.clear()
+
+    async def _request(self, name: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        """Send a bridge request and wait for its correlated response."""
+        from homeassistant.components import mqtt  # noqa: PLC0415
+
+        await self.async_setup()
+        self._seq += 1
+        txn = f"rg-{self._seq}"
+        fut: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
+        self._pending[txn] = fut
+        try:
+            await mqtt.async_publish(
+                self.hass,
+                f"{self.base_topic}/bridge/request/{name}",
+                json.dumps({**payload, "transaction": txn}),
+                qos=1,
+            )
+            return await asyncio.wait_for(fut, timeout)
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"No response from Zigbee2MQTT on {self.base_topic}/bridge/response/{name} "
+                f"within {timeout:.0f}s (is Z2M running and using base topic '{self.base_topic}'?)"
+            ) from err
+        finally:
+            self._pending.pop(txn, None)
 
     async def _bridge_info(self) -> dict[str, Any]:
-        """Read the retained bridge/info message."""
-        from homeassistant.components import mqtt  # noqa: PLC0415
-
-        fut: asyncio.Future[dict[str, Any]] = self.hass.loop.create_future()
-
-        @callback
-        def _on_msg(msg: mqtt.ReceiveMessage) -> None:
-            if not fut.done():
-                try:
-                    fut.set_result(json.loads(msg.payload))
-                except ValueError:
-                    fut.set_result({})
-
-        unsub = await mqtt.async_subscribe(self.hass, f"{self.base_topic}/bridge/info", _on_msg, qos=1)
-        try:
-            return await asyncio.wait_for(fut, 5)
-        except TimeoutError:
-            return {}
-        finally:
-            unsub()
+        """Return the latest retained bridge/info (waits briefly on first use)."""
+        await self.async_setup()
+        if not self._info:
+            try:
+                await asyncio.wait_for(self._info_event.wait(), 5)
+            except TimeoutError:
+                return {}
+        return self._info
 
     # ---------------------------------------------------------- identity
 
@@ -111,6 +159,10 @@ class Zigbee2MQTTSource(BackupSource):
         if not self.available():
             raise SourceUnavailable("MQTT integration is not loaded")
         info = await self._bridge_info()
+        if not info:
+            raise SourceUnavailable(
+                f"No retained {self.base_topic}/bridge/info on the broker; Zigbee2MQTT may be offline"
+            )
         coord = info.get("coordinator") or {}
         net = info.get("network") or {}
         return {

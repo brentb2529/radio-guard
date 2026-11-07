@@ -1,0 +1,13 @@
+[2026-11-07 16:06:35,430] :: INFO - Loading plugins from config
+[2026-11-07 16:06:35,442] :: INFO - Listener 'default' bind to 127.0.0.1:1883 (max_connections=0)
+[2026-11-07 16:06:35,443] :: INFO - Starting session expiration monitor.
+[2026-11-07 16:07:03,411] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:07:03,411] :: INFO - Connection from 127.0.0.1:35113 on listener 'default'
+[2026-11-07 16:07:59,183] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:07:59,183] :: INFO - Connection from 127.0.0.1:50049 on listener 'default'
+[2026-11-07 16:07:59,184] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:07:59,188] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:07:59,188] :: INFO - Connection from 127.0.0.1:34003 on listener 'default'
+[2026-11-07 16:11:42,519] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:16:06,510] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:16:06,511] :: INFO - Connection from 127.0.0.1:45471 on listener 'default'

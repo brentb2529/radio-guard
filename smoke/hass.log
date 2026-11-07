@@ -1,0 +1,75 @@
+2026-11-07 16:07:07.695 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration radio_guard which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant
+2026-11-07 16:07:09.520 WARNING (MainThread) [aiohttp_fast_zlib] zlib_ng and isal are not available, falling back to zlib, performance will be degraded.
+2026-11-07 16:07:42.743 ERROR (MainThread) [homeassistant.config_entries] Error occurred loading flow for integration google_translate: No module named 'mutagen'
+2026-11-07 16:07:42.743 ERROR (MainThread) [homeassistant] Error doing job: Task exception was never retrieved (task: None)
+Traceback (most recent call last):
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/config_entries.py", line 3967, in _load_integration
+    await integration.async_get_platform("config_flow")
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/loader.py", line 1111, in async_get_platform
+    platforms = await self.async_get_platforms((platform_name,))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/loader.py", line 1188, in async_get_platforms
+    import_future.result()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/loader.py", line 1158, in async_get_platforms
+    await self.hass.async_add_import_executor_job(
+        self._load_platforms, platform_names
+    )
+  File "/usr/local/lib/python3.13/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/loader.py", line 1101, in _load_platforms
+    platform_name: self._load_platform(platform_name)
+                   ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/loader.py", line 1275, in _load_platform
+    cache[full_name] = self._import_platform(platform_name)
+                       ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/loader.py", line 1307, in _import_platform
+    return importlib.import_module(f"{self.pkg_path}.{platform_name}")
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/util/loop.py", line 201, in protected_loop_func
+    return func(*args, **kwargs)
+  File "/usr/local/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1404, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1369, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1340, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1027, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/components/google_translate/config_flow.py", line 9, in <module>
+    from homeassistant.components.tts import CONF_LANG
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/components/tts/__init__.py", line 22, in <module>
+    import mutagen
+ModuleNotFoundError: No module named 'mutagen'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/config_entries.py", line 1484, in async_init
+    flow, result = await self._async_init(flow_id, handler, context, data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/config_entries.py", line 1522, in _async_init
+    flow = await self.async_create_flow(handler, context=context, data=data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/config_entries.py", line 1744, in async_create_flow
+    handler = await _async_get_flow_handler(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.hass, handler_key, self._hass_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/config_entries.py", line 3988, in _async_get_flow_handler
+    await _load_integration(hass, domain, hass_config)
+  File "/home/claude/radio-guard/.venv/lib/python3.13/site-packages/homeassistant/config_entries.py", line 3974, in _load_integration
+    raise data_entry_flow.UnknownHandler from err
+homeassistant.data_entry_flow.UnknownHandler
+2026-11-07 16:08:31.953 DEBUG (MainThread) [custom_components.radio_guard.coordinator] Finished fetching radio_guard data in 0.102 seconds (success: True)
+2026-11-07 16:09:40.890 ERROR (MainThread) [custom_components.radio_guard.coordinator] Zigbee2MQTT backup failed: 
+2026-11-07 16:09:40.891 ERROR (MainThread) [custom_components.radio_guard.coordinator] Z-Wave JS backup failed: Z-Wave JS is not loaded
+2026-11-07 16:09:40.994 DEBUG (MainThread) [custom_components.radio_guard.coordinator] Finished fetching radio_guard data in 0.103 seconds (success: True)
+2026-11-07 16:16:05.602 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration radio_guard which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant
+2026-11-07 16:16:06.249 WARNING (MainThread) [aiohttp_fast_zlib] zlib_ng and isal are not available, falling back to zlib, performance will be degraded.
+2026-11-07 16:16:07.204 DEBUG (MainThread) [custom_components.radio_guard.coordinator] Finished fetching radio_guard data in 0.522 seconds (success: True)
+2026-11-07 16:16:21.011 INFO (MainThread) [custom_components.radio_guard.coordinator] Zigbee2MQTT backup written: 20261107T211621Z.zip (749 bytes)
+2026-11-07 16:16:21.012 DEBUG (MainThread) [custom_components.radio_guard.coordinator] Finished fetching radio_guard data in 0.001 seconds (success: True)

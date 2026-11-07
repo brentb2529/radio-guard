@@ -48,6 +48,14 @@ class BackupSource(ABC):
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
 
+    async def async_setup(self) -> None:
+        """Acquire long-lived resources (subscriptions). Idempotent. Optional."""
+        return None
+
+    async def async_teardown(self) -> None:
+        """Release what async_setup acquired. Optional."""
+        return None
+
     @abstractmethod
     def available(self) -> bool:
         """True if the upstream integration is loaded."""

@@ -42,6 +42,7 @@ RESTORE_SCHEMA = vol.Schema(
 
 async def async_setup_entry(hass: HomeAssistant, entry: RadioGuardConfigEntry) -> bool:
     coordinator = RadioGuardCoordinator(hass, entry)
+    await coordinator.async_setup_sources()
     await coordinator.async_config_entry_first_refresh()
     await coordinator.async_start()
     entry.runtime_data = coordinator
