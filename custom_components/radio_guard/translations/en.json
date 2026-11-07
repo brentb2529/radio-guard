@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Radio Guard",
+        "description": "Scheduled backups of your Zigbee and Z-Wave coordinators, stored under your Home Assistant config directory so they ride along in HA's own backups.",
+        "data": {
+          "sources": "Coordinators to back up",
+          "z2m_base_topic": "Zigbee2MQTT base topic",
+          "backup_hour": "Backup hour (0-23)",
+          "backup_minute": "Backup minute",
+          "retention": "Backups to keep per source",
+          "stale_hours": "Warn when newest backup is older than (hours)",
+          "backup_dir": "Backup folder (relative to /config)",
+          "heartbeat_enabled": "Publish MQTT heartbeat for an external watchdog",
+          "heartbeat_topic": "Heartbeat topic",
+          "heartbeat_interval": "Heartbeat interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "no_sources": "Select at least one coordinator."
+    },
+    "abort": {
+      "already_configured": "Radio Guard is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Radio Guard options",
+        "data": {
+          "sources": "Coordinators to back up",
+          "z2m_base_topic": "Zigbee2MQTT base topic",
+          "backup_hour": "Backup hour (0-23)",
+          "backup_minute": "Backup minute",
+          "retention": "Backups to keep per source",
+          "stale_hours": "Warn when newest backup is older than (hours)",
+          "backup_dir": "Backup folder (relative to /config)",
+          "heartbeat_enabled": "Publish MQTT heartbeat for an external watchdog",
+          "heartbeat_topic": "Heartbeat topic",
+          "heartbeat_interval": "Heartbeat interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "no_sources": "Select at least one coordinator."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "last_backup": { "name": "Last backup" },
+      "backup_age": { "name": "Backup age" },
+      "backup_count": { "name": "Stored backups" },
+      "identity": { "name": "Coordinator identity" },
+      "last_error": { "name": "Last error" }
+    },
+    "binary_sensor": {
+      "backup_stale": { "name": "Backup stale" },
+      "source_available": { "name": "Source available" }
+    },
+    "button": {
+      "backup_now": { "name": "Back up now" }
+    }
+  },
+  "services": {
+    "backup_now": {
+      "name": "Back up now",
+      "description": "Pull a fresh coordinator backup. Omit source to back up all enabled coordinators.",
+      "fields": {
+        "source": { "name": "Source", "description": "Which coordinator to back up." }
+      }
+    },
+    "restore": {
+      "name": "Restore",
+      "description": "Write a stored backup to the attached coordinator. Without confirm it only runs the pre-flight check and reports what would happen.",
+      "fields": {
+        "source": { "name": "Source", "description": "Which coordinator to restore." },
+        "file": { "name": "Backup file", "description": "Filename or path of the backup. Defaults to the newest." },
+        "confirm": { "name": "Confirm", "description": "Actually perform the restore. Leave off for a dry run." },
+        "force": { "name": "Force", "description": "Proceed even if the pre-flight check reports a problem." }
+      }
+    }
+  },
+  "issues": {
+    "backup_failed": {
+      "title": "{source} backup failed",
+      "description": "The most recent {source} coordinator backup failed: {error}. Check the logs and the upstream integration, then press the Back up now button."
+    },
+    "backup_stale": {
+      "title": "{source} backup is stale",
+      "description": "The newest {source} coordinator backup is {age} old. If the coordinator fails, the restore will be that far out of date. Press Back up now, or check why the schedule is not running."
+    }
+  }
+}

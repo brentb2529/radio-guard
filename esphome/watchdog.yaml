@@ -1,0 +1,135 @@
+# Radio Guard power watchdog (reference)
+#
+# ESP32 with one relay in series with the Home Assistant box's power supply.
+# Subscribes to Radio Guard's MQTT heartbeat. If no heartbeat arrives for
+# `timeout`, it cuts power for 10 s, restores it, and then backs off for
+# `cooldown` before it will cycle again. Nothing here depends on HA.
+#
+# Wire the relay NORMALLY CLOSED so a dead ESP leaves HA powered.
+# Use a relay rated for your PSU; for a Pi this is the 5 V barrel/USB-C line,
+# for a NUC it's the 12/19 V brick. Never switch mains with a bare module.
+#
+# Also handles: broker down. If the ESP loses MQTT entirely it does NOT cycle
+# power (a dead broker is not a dead HA). It only acts on "connected to broker
+# but no heartbeat".
+
+substitutions:
+  name: radio-guard-watchdog
+  heartbeat_topic: radio_guard/heartbeat
+  timeout: "300"        # seconds without heartbeat before cycling
+  cooldown: "3600"      # seconds after a cycle before another is allowed
+  off_time: "10"        # seconds to hold power off
+  relay_pin: GPIO26
+  led_pin: GPIO2
+
+esphome:
+  name: ${name}
+  on_boot:
+    priority: -100
+    then:
+      - lambda: 'id(last_heartbeat) = millis();'
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+api:
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${name} fallback"
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: false
+  on_message:
+    topic: ${heartbeat_topic}
+    then:
+      - lambda: |-
+          id(last_heartbeat) = millis();
+          id(heartbeats_seen) += 1;
+
+globals:
+  - id: last_heartbeat
+    type: uint32_t
+    initial_value: '0'
+  - id: last_cycle
+    type: uint32_t
+    initial_value: '0'
+  - id: heartbeats_seen
+    type: uint32_t
+    initial_value: '0'
+  - id: cycles
+    type: uint32_t
+    initial_value: '0'
+
+switch:
+  # ON = HA powered. Relay wired NC, so "on" means relay coil off.
+  - platform: gpio
+    id: ha_power
+    name: "HA power"
+    pin:
+      number: ${relay_pin}
+      inverted: true
+    restore_mode: ALWAYS_ON
+  - platform: template
+    id: armed
+    name: "Watchdog armed"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+status_led:
+  pin: ${led_pin}
+
+sensor:
+  - platform: template
+    name: "Seconds since heartbeat"
+    unit_of_measurement: s
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: 'return (millis() - id(last_heartbeat)) / 1000.0;'
+  - platform: template
+    name: "Power cycles"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(cycles);'
+
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          if (!id(armed).state) return;
+          if (!id(mqtt_client).is_connected()) return;      // broker down != HA down
+          if (id(heartbeats_seen) == 0) return;             // never seen one; don't guess
+          uint32_t now = millis();
+          uint32_t silent = (now - id(last_heartbeat)) / 1000;
+          uint32_t since_cycle = (now - id(last_cycle)) / 1000;
+          if (silent < ${timeout}) return;
+          if (id(last_cycle) != 0 && since_cycle < ${cooldown}) return;
+          ESP_LOGW("watchdog", "No heartbeat for %u s; cycling HA power", silent);
+          id(last_cycle) = now;
+          id(cycles) += 1;
+          id(ha_power).turn_off();
+      - delay: ${off_time}s
+      - switch.turn_on: ha_power
+      - lambda: 'id(last_heartbeat) = millis();'   // give HA a full timeout to boot
+
+button:
+  - platform: template
+    name: "Cycle HA power now"
+    on_press:
+      - switch.turn_off: ha_power
+      - delay: ${off_time}s
+      - switch.turn_on: ha_power
+      - lambda: |-
+          id(last_cycle) = millis();
+          id(last_heartbeat) = millis();
+          id(cycles) += 1;

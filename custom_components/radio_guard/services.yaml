@@ -1,0 +1,42 @@
+backup_now:
+  fields:
+    source:
+      required: false
+      selector:
+        select:
+          options:
+            - label: Zigbee2MQTT
+              value: zigbee2mqtt
+            - label: ZHA
+              value: zha
+            - label: Z-Wave JS
+              value: zwave_js
+
+restore:
+  fields:
+    source:
+      required: true
+      selector:
+        select:
+          options:
+            - label: Zigbee2MQTT
+              value: zigbee2mqtt
+            - label: ZHA
+              value: zha
+            - label: Z-Wave JS
+              value: zwave_js
+    file:
+      required: false
+      example: "20261107T031700Z.nvm"
+      selector:
+        text:
+    confirm:
+      required: false
+      default: false
+      selector:
+        boolean:
+    force:
+      required: false
+      default: false
+      selector:
+        boolean:
