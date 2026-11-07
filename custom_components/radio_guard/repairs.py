@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 from .backup import RestoreStaged
 from .const import DOMAIN
 from .coordinator import RadioGuardCoordinator, device_count_of
+from .wizard import ReplaceWizardMixin
 
 
 def _coordinator(hass: HomeAssistant) -> RadioGuardCoordinator:
@@ -45,8 +46,8 @@ class BackupNowRepairFlow(ConfirmRepairFlow):
         )
 
 
-class RestoreRepairFlow(RepairsFlow):
-    """Pick a backup -> pre-flight -> type RESTORE -> done."""
+class RestoreRepairFlow(ReplaceWizardMixin, RepairsFlow):
+    """Coordinator replaced: guided replacement when the source supports it, else pick -> pre-flight -> RESTORE."""
 
     def __init__(self, hass: HomeAssistant, sid: str) -> None:
         self._hass = hass
@@ -60,7 +61,13 @@ class RestoreRepairFlow(RepairsFlow):
         return _coordinator(self._hass)
 
     async def async_step_init(self, user_input: dict[str, str] | None = None) -> data_entry_flow.FlowResult:
+        plan = await self.coord.states[self.sid].source.async_swap_plan()
+        if plan.supported:
+            return await self.async_step_wiz_pick()
         return await self.async_step_pick()
+
+    async def _wizard_finish(self) -> data_entry_flow.FlowResult:
+        return self.async_create_entry(title="", data={})
 
     async def async_step_pick(self, user_input: dict[str, Any] | None = None) -> data_entry_flow.FlowResult:
         st = self.coord.states[self.sid]
@@ -76,6 +83,8 @@ class RestoreRepairFlow(RepairsFlow):
             devices = device_count_of(r.meta)
             ident = r.meta.get("ieee") or r.meta.get("home_id_hex") or r.meta.get("home_id") or ""
             label = f"{r.created.astimezone():%Y-%m-%d %H:%M}"
+            if r.name.startswith("pre_restore_"):
+                label += " (automatic snapshot taken before a restore)"
             if devices is not None:
                 label += f" - {devices} devices"
             if ident:
@@ -187,6 +196,29 @@ class RestoreRepairFlow(RepairsFlow):
         )
 
 
+class CoordinatorDownRepairFlow(ReplaceWizardMixin, RepairsFlow):
+    """Coordinator stopped responding: replace it now, or keep waiting."""
+
+    def __init__(self, hass: HomeAssistant, sid: str) -> None:
+        self._hass = hass
+        self.sid = sid
+
+    async def async_step_init(self, user_input: dict[str, str] | None = None) -> data_entry_flow.FlowResult:
+        st = _coordinator(self._hass).states[self.sid]
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["wiz_pick", "wait"],
+            description_placeholders={"source": st.source.name},
+        )
+
+    async def async_step_wait(self, user_input: dict[str, str] | None = None) -> data_entry_flow.FlowResult:
+        st = _coordinator(self._hass).states[self.sid]
+        return self.async_abort(reason="keep_waiting", description_placeholders={"source": st.source.name})
+
+    async def _wizard_finish(self) -> data_entry_flow.FlowResult:
+        return self.async_create_entry(title="", data={})
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
 ) -> RepairsFlow:
@@ -194,4 +226,6 @@ async def async_create_fix_flow(
     sid = data["source"]
     if data.get("action") == "restore":
         return RestoreRepairFlow(hass, sid)
+    if data.get("action") == "replace":
+        return CoordinatorDownRepairFlow(hass, sid)
     return BackupNowRepairFlow(hass, sid)

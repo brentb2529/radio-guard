@@ -45,7 +45,7 @@ def fk(hass: HomeAssistant) -> dict[str, FakeSource]:
     with (
         patch(
             "custom_components.radio_guard.coordinator.Zigbee2MQTTSource",
-            lambda hass, topic: sources[SOURCE_Z2M],
+            lambda hass, topic, *a: sources[SOURCE_Z2M],
         ),
         patch("custom_components.radio_guard.coordinator.ZHASource", lambda hass: sources[SOURCE_ZHA]),
         patch("custom_components.radio_guard.coordinator.ZWaveJSSource", lambda hass: sources[SOURCE_ZWAVE]),

@@ -9,3 +9,5 @@ smoke/config/
 smoke/*.log
 smoke/token.txt
 nohup.out
+smoke/sticks/
+smoke/z2m_data*/

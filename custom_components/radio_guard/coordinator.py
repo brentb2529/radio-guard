@@ -12,9 +12,10 @@ from typing import Any
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -36,10 +37,12 @@ from .const import (
     CONF_HEARTBEAT_INTERVAL,
     CONF_HEARTBEAT_TOPIC,
     CONF_MAX_RESTORE_AGE_DAYS,
+    CONF_OFFLINE_MINUTES,
     CONF_RETENTION,
     CONF_SOURCES,
     CONF_STALE_HOURS,
     CONF_Z2M_BASE_TOPIC,
+    CONF_Z2M_DATA_DIR,
     DEFAULT_BACKUP_DIR,
     DEFAULT_BACKUP_HOUR,
     DEFAULT_BACKUP_MINUTE,
@@ -47,6 +50,7 @@ from .const import (
     DEFAULT_HEARTBEAT_INTERVAL,
     DEFAULT_HEARTBEAT_TOPIC,
     DEFAULT_MAX_RESTORE_AGE_DAYS,
+    DEFAULT_OFFLINE_MINUTES,
     DEFAULT_RETENTION,
     DEFAULT_STALE_HOURS,
     DEFAULT_Z2M_BASE_TOPIC,
@@ -56,18 +60,21 @@ from .const import (
     ISSUE_BACKUP_FAILED,
     ISSUE_BACKUP_NEVER,
     ISSUE_BACKUP_STALE,
+    ISSUE_COORDINATOR_DOWN,
     ISSUE_COORDINATOR_REPLACED,
     NOTIFICATION_FIRST_BACKUP,
     PRE_RESTORE_PREFIX,
     SOURCE_Z2M,
     SOURCE_ZHA,
     SOURCE_ZWAVE,
+    STARTUP_GRACE_MINUTES,
 )
 from .storage import BackupRecord, BackupStore
 
 _LOGGER = logging.getLogger(__name__)
 
-POLL_INTERVAL = timedelta(minutes=15)
+POLL_INTERVAL = timedelta(minutes=1)
+REPLACED_CONFIRMATIONS = 2  # consecutive polls before 'coordinator replaced' is believed
 FIRST_BACKUP_DELAY = timedelta(seconds=45)
 DEVICE_COUNT_DROP_RATIO = 0.5
 
@@ -126,6 +133,13 @@ class SourceState:
     last_attempt: datetime | None = None
     running: bool = False
     restoring: bool = False
+    swapping: bool = False  # guided replacement in progress
+    down_since: datetime | None = None
+    replaced_seen: int = 0
+
+    @property
+    def busy(self) -> bool:
+        return self.running or self.restoring or self.swapping
 
     @property
     def count(self) -> int:
@@ -165,6 +179,9 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         self.entry = entry
         self._unsubs: list[CALLBACK_TYPE] = []
         self.states: dict[str, SourceState] = {}
+        # Down-detection only counts after HA has fully started plus a grace period, so a slow
+        # boot (add-ons, Z2M, the broker still coming up) never looks like a dead coordinator.
+        self._ready_at: datetime | None = None
         self._build_sources()
 
     # ------------------------------------------------------------ config
@@ -183,6 +200,13 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
     @property
     def max_restore_age_days(self) -> float:
         return float(self._opt(CONF_MAX_RESTORE_AGE_DAYS, DEFAULT_MAX_RESTORE_AGE_DAYS))
+
+    @property
+    def offline_minutes(self) -> float:
+        return float(self._opt(CONF_OFFLINE_MINUTES, DEFAULT_OFFLINE_MINUTES))
+
+    def _health_counting(self) -> bool:
+        return self._ready_at is not None and dt_util.utcnow() >= self._ready_at
 
     @property
     def schedule(self) -> tuple[int, int]:
@@ -205,7 +229,9 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         retention = int(self._opt(CONF_RETENTION, DEFAULT_RETENTION))
         factories = {
             SOURCE_Z2M: lambda: Zigbee2MQTTSource(
-                self.hass, self._opt(CONF_Z2M_BASE_TOPIC, DEFAULT_Z2M_BASE_TOPIC)
+                self.hass,
+                self._opt(CONF_Z2M_BASE_TOPIC, DEFAULT_Z2M_BASE_TOPIC),
+                self._opt(CONF_Z2M_DATA_DIR, None),
             ),
             SOURCE_ZHA: lambda: ZHASource(self.hass),
             SOURCE_ZWAVE: lambda: ZWaveJSSource(self.hass),
@@ -226,6 +252,15 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
                 _LOGGER.debug("Source %s setup deferred", st.source.id, exc_info=True)
 
     async def async_start(self) -> None:
+        grace = timedelta(minutes=STARTUP_GRACE_MINUTES)
+
+        @callback
+        def _ha_started(_hass: HomeAssistant) -> None:
+            # Also runs right away when the integration is (re)loaded on a running HA:
+            # sources still get the grace period before anything counts as down.
+            self._ready_at = dt_util.utcnow() + grace
+
+        self._unsubs.append(async_at_started(self.hass, _ha_started))
         hour, minute = self.schedule
         self._unsubs.append(
             async_track_time_change(self.hass, self._scheduled_backup, hour=hour, minute=minute, second=0)
@@ -303,13 +338,48 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
                     _LOGGER.debug("Identity read failed for %s", sid, exc_info=True)
             else:
                 st.identity = {}
+            await self._update_health(st)
+            st.replaced_seen = st.replaced_seen + 1 if st.coordinator_replaced else 0
             self._update_issues(sid, st)
         return self.states
 
+    async def _update_health(self, st: SourceState) -> None:
+        """Track how long the coordinator has been *known* down. Unknown never counts as down."""
+        try:
+            healthy = await st.source.async_health()
+        except Exception:  # noqa: BLE001
+            healthy = None
+        if healthy is False and self._health_counting() and not st.busy:
+            st.down_since = st.down_since or dt_util.utcnow()
+        else:
+            st.down_since = None
+
+    def coordinator_down(self, st: SourceState) -> bool:
+        if st.down_since is None or st.busy:
+            return False
+        return dt_util.utcnow() - st.down_since >= timedelta(minutes=self.offline_minutes)
+
     def _update_issues(self, sid: str, st: SourceState) -> None:
         age = st.age_hours
-        never = st.available and age is None
-        stale = st.available and age is not None and age > self.stale_hours
+        down = self.coordinator_down(st)
+        # One clear message on failure day: while the coordinator is down, backup nags are noise.
+        never = st.available and age is None and not down
+        stale = st.available and age is not None and age > self.stale_hours and not down
+        if down:
+            ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_BACKUP_FAILED}_{sid}")
+        _set_issue(
+            self.hass,
+            f"{ISSUE_COORDINATOR_DOWN}_{sid}",
+            down,
+            translation_key=ISSUE_COORDINATOR_DOWN,
+            severity=ir.IssueSeverity.ERROR,
+            placeholders={
+                "source": st.source.name,
+                "minutes": f"{self.offline_minutes:.0f}",
+                "since": dt_util.as_local(st.down_since).strftime("%H:%M") if st.down_since else "",
+            },
+            data={"source": sid, "action": "replace"},
+        )
 
         _set_issue(
             self.hass,
@@ -332,7 +402,7 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         _set_issue(
             self.hass,
             f"{ISSUE_COORDINATOR_REPLACED}_{sid}",
-            st.coordinator_replaced and not st.restoring,
+            st.replaced_seen >= REPLACED_CONFIRMATIONS and not st.busy,
             translation_key=ISSUE_COORDINATOR_REPLACED,
             severity=ir.IssueSeverity.WARNING,
             placeholders={
@@ -360,6 +430,10 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         """
         results: dict[str, BackupRecord | Exception] = {}
         for sid, st in list(self.states.items()):
+            if scheduled and (st.down_since is not None or st.swapping):
+                _LOGGER.warning("%s: coordinator is down; skipping the scheduled backup", st.source.name)
+                results[sid] = SourceUnavailable(f"{st.source.name} is down")
+                continue
             if scheduled and st.coordinator_replaced:
                 _LOGGER.warning(
                     "%s: coordinator identity changed since the last backup; skipping the scheduled backup "
@@ -494,6 +568,33 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         finally:
             st.restoring = False
             await self.async_request_refresh()
+
+    # ------------------------------------------------ guided replacement
+
+    def async_swap_begin(self, sid: str) -> None:
+        st = self.states[sid]
+        if st.busy:
+            raise RuntimeError(f"{st.source.name} is busy with a backup or restore; try again in a minute")
+        st.swapping = True
+        st.down_since = None
+        self.async_update_listeners()
+
+    async def async_swap_end(self, sid: str, record: BackupRecord | None) -> BackupRecord | None:
+        """Finish a replacement. On success: clear issues, take a fresh backup of the new coordinator."""
+        st = self.states[sid]
+        st.swapping = False
+        fresh = None
+        if record is not None:
+            for issue in (ISSUE_COORDINATOR_DOWN, ISSUE_COORDINATOR_REPLACED, ISSUE_BACKUP_FAILED):
+                ir.async_delete_issue(self.hass, DOMAIN, f"{issue}_{sid}")
+            st.replaced_seen = 0
+            self.hass.bus.async_fire(EVENT_RESTORE_COMPLETE, {"source": sid, "file": str(record.path)})
+            try:
+                fresh = await self.async_backup(sid)
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Post-restore backup of %s failed", st.source.name, exc_info=True)
+        await self.async_request_refresh()
+        return fresh
 
     # --------------------------------------------------------- heartbeat
 

@@ -24,6 +24,14 @@
     "step": {
       "init": {
         "title": "Radio Guard",
+        "menu_options": {
+          "settings": "Settings",
+          "replace": "Replace a failed coordinator",
+          "migrate": "Move to a new coordinator"
+        }
+      },
+      "settings": {
+        "title": "Radio Guard",
         "description": "Changes apply after an automatic reload.",
         "data": {
           "sources": "Coordinators"
@@ -35,20 +43,24 @@
               "backup_time": "Daily backup time",
               "retention": "Backups to keep per coordinator",
               "stale_hours": "Warn when newest backup is older than",
-              "max_restore_age_days": "Refuse to restore backups older than"
+              "max_restore_age_days": "Refuse to restore backups older than",
+              "offline_minutes": "Alert when a coordinator is offline for"
             },
             "data_description": {
               "backup_time": "Local time. Default 03:17 avoids the 03:00 Home Assistant backup rush.",
-              "max_restore_age_days": "A restore from a very old backup leaves recently added devices orphaned. Force overrides this."
+              "max_restore_age_days": "A restore from a very old backup leaves recently added devices orphaned. Force overrides this.",
+              "offline_minutes": "Counted only after Home Assistant has fully started, so restarts and slow boots never trigger it."
             }
           },
           "zigbee2mqtt": {
             "name": "Zigbee2MQTT",
             "data": {
-              "z2m_base_topic": "Base topic"
+              "z2m_base_topic": "Base topic",
+              "z2m_data_dir": "Data folder (only if Zigbee2MQTT is not the add-on)"
             },
             "data_description": {
-              "z2m_base_topic": "Must match base_topic in Zigbee2MQTT's MQTT settings."
+              "z2m_base_topic": "Must match base_topic in Zigbee2MQTT's MQTT settings.",
+              "z2m_data_dir": "Where Home Assistant sees Zigbee2MQTT's data folder, for example /config/zigbee2mqtt or /share/zigbee2mqtt. Needed to restore a Zigbee2MQTT that runs in its own container."
             }
           },
           "storage": {
@@ -67,27 +79,149 @@
             }
           }
         }
+      },
+      "pick_source": {
+        "title": "Which coordinator?",
+        "data": {
+          "source": "Coordinator"
+        }
+      },
+      "wiz_pick": {
+        "title": "Move your {source} network to a new coordinator",
+        "description": "Radio Guard copies your network from a backup onto a new coordinator, so you don't have to re-pair any devices. You only swap the hardware when asked.\n\nChoose the backup to restore. The newest is usually right; pick an older one only if the coordinator was misbehaving before it failed.",
+        "data": {
+          "file": "Backup"
+        }
+      },
+      "wiz_migrate": {
+        "title": "Move to a new {source} coordinator",
+        "description": "Radio Guard moves your network from the coordinator you use now onto a new one, without re-pairing any devices.\n\n**Now in use:** {ieee} on `{port}`, {devices} devices\n\n1. Radio Guard takes a fresh backup of this coordinator.\n2. {source} stops and you swap the hardware.\n3. Your network is written to the new coordinator, {source} starts again and your devices are asked to report in.\n\nThe old coordinator is not changed, so you can go back to it at the end."
+      },
+      "wiz_swap": {
+        "title": "Swap the coordinator",
+        "description": "{source} is stopped.\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+        "data": {
+          "port": "New coordinator",
+          "unplugged": "The old coordinator is unplugged",
+          "network_address": "Network coordinator address"
+        },
+        "data_description": {
+          "port": "Leave as is if the new coordinator uses the same port as the old one.",
+          "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+        }
+      },
+      "wiz_swap_migrate": {
+        "title": "Swap the coordinator",
+        "description": "{source} is stopped and your fresh backup is saved.\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+        "data": {
+          "port": "New coordinator",
+          "unplugged": "The old coordinator is unplugged",
+          "network_address": "Network coordinator address"
+        },
+        "data_description": {
+          "port": "Leave as is if the new coordinator uses the same port as the old one.",
+          "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+        }
+      },
+      "wiz_confirm": {
+        "title": "Ready to restore",
+        "description": "**Backup:** {file}, network {network}\n**New coordinator:** `{port}`\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
+      },
+      "wiz_blocked": {
+        "title": "This backup can't be used",
+        "description": "Radio Guard won't restore {file}:\n{reasons}\n\nNothing was changed. Press **Submit** to choose another backup."
+      },
+      "wiz_done": {
+        "title": "Your {source} network is back",
+        "description": "{source} is running on the new coordinator (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}",
+        "menu_options": {
+          "wiz_finish": "Finish",
+          "wiz_devices": "Ask devices to report in again"
+        }
+      },
+      "wiz_done_migrate": {
+        "title": "Move complete",
+        "description": "{source} is running on the new coordinator (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}",
+        "menu_options": {
+          "wiz_finish": "Finish",
+          "wiz_devices": "Ask devices to report in again",
+          "wiz_rollback": "Go back to the old coordinator"
+        }
+      },
+      "wiz_rollback_swap": {
+        "title": "Put the old coordinator back",
+        "description": "{source} is stopped.\n\n1. **Unplug the new coordinator.**\n2. **Plug the old one back in** (it was on `{old_port}`).\n\nRadio Guard then points {source} back at it and checks your network.",
+        "data": {
+          "swapped_back": "The old coordinator is back in, the new one is unplugged"
+        }
+      },
+      "wiz_failed_migrate": {
+        "title": "The move did not finish",
+        "description": "{error}\n\nYour old coordinator still holds your network, unchanged.",
+        "menu_options": {
+          "wiz_rollback": "Go back to the old coordinator",
+          "wiz_close": "Close and leave things as they are"
+        }
       }
     },
     "error": {
-      "no_sources": "Select at least one coordinator."
+      "no_sources": "Select at least one coordinator.",
+      "unplugged_required": "Tick the box once the hardware is swapped."
+    },
+    "progress": {
+      "stopping": "Stopping {source}…",
+      "wait_stopped": "**Stop {source} now.** It isn't managed by Home Assistant here, so stop it the way you normally do (for example `docker stop zigbee2mqtt`).\n\nThis page continues by itself as soon as {source} goes offline.",
+      "backing_up": "Taking a fresh backup of your coordinator…",
+      "restoring": "Restoring your network onto the new coordinator and starting {source}. This usually takes under a minute.",
+      "writing": "Writing your network into {source}'s data folder…",
+      "wait_started": "**Start {source} now** (for example `docker start zigbee2mqtt`).\n\nThis page continues by itself once {source} is online and Radio Guard has checked the network.",
+      "checking_devices": "Asking your devices to report in on the new coordinator. Mains-powered devices usually answer within a minute.",
+      "starting_old": "Starting {source} on the old coordinator and checking your network…"
+    },
+    "abort": {
+      "swap_unsupported": "{reason}",
+      "no_backups": "There are no stored {source} backups to restore.",
+      "swap_busy": "{error}",
+      "swap_failed": "The {source} replacement did not finish: {error}\n\nRadio Guard put {source} back the way it was. Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
+      "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
+      "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
+      "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",
+      "not_loaded": "Radio Guard isn't loaded. Reload it and try again."
     }
   },
   "entity": {
     "sensor": {
-      "last_backup": { "name": "Last backup" },
-      "next_backup": { "name": "Next backup" },
-      "stored_backups": { "name": "Stored backups" },
-      "identity": { "name": "Coordinator identity" }
+      "last_backup": {
+        "name": "Last backup"
+      },
+      "next_backup": {
+        "name": "Next backup"
+      },
+      "stored_backups": {
+        "name": "Stored backups"
+      },
+      "identity": {
+        "name": "Coordinator identity"
+      }
     },
     "binary_sensor": {
-      "backup_stale": { "name": "Backup problem" },
-      "coordinator_replaced": { "name": "Coordinator replaced" },
-      "source_loaded": { "name": "Integration loaded" },
-      "backup_running": { "name": "Backup running" }
+      "backup_stale": {
+        "name": "Backup problem"
+      },
+      "coordinator_replaced": {
+        "name": "Coordinator replaced"
+      },
+      "source_loaded": {
+        "name": "Integration loaded"
+      },
+      "backup_running": {
+        "name": "Backup running"
+      }
     },
     "button": {
-      "backup_now": { "name": "Back up now" }
+      "backup_now": {
+        "name": "Back up now"
+      }
     }
   },
   "selector": {
@@ -110,34 +244,64 @@
       "name": "Back up now",
       "description": "Pull a fresh coordinator backup. Omit source to back up all enabled coordinators.",
       "fields": {
-        "source": { "name": "Source", "description": "Which coordinator to back up." }
+        "source": {
+          "name": "Source",
+          "description": "Which coordinator to back up."
+        }
       }
     },
     "list_backups": {
       "name": "List backups",
       "description": "Return the stored backups per coordinator, newest first.",
       "fields": {
-        "source": { "name": "Source", "description": "Limit to one coordinator." }
+        "source": {
+          "name": "Source",
+          "description": "Limit to one coordinator."
+        }
       }
     },
     "restore": {
       "name": "Restore",
       "description": "Overwrites the attached coordinator with a stored network backup. Dry run by default: reports what would happen and raises a notification without changing anything.",
       "fields": {
-        "source": { "name": "Source", "description": "Which coordinator to restore." },
-        "file": { "name": "Backup file", "description": "File name from list_backups. Defaults to the newest." },
-        "mode": { "name": "Mode", "description": "Dry run only checks; restore performs it." },
-        "force": { "name": "Force", "description": "Proceed even if the pre-flight reports a blocking problem. For Silicon Labs radios this also permits a one-time IEEE overwrite." }
+        "source": {
+          "name": "Source",
+          "description": "Which coordinator to restore."
+        },
+        "file": {
+          "name": "Backup file",
+          "description": "File name from list_backups. Defaults to the newest."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Dry run only checks; restore performs it."
+        },
+        "force": {
+          "name": "Force",
+          "description": "Proceed even if the pre-flight reports a blocking problem. For Silicon Labs radios this also permits a one-time IEEE overwrite."
+        }
       }
     }
   },
   "exceptions": {
-    "not_set_up": { "message": "Radio Guard is not set up." },
-    "source_not_enabled": { "message": "{source} is not enabled in Radio Guard. Add it under Configure." },
-    "backup_failed": { "message": "{source} backup failed: {error}" },
-    "restore_failed": { "message": "{source} restore failed: {error}" },
-    "no_backup": { "message": "No {source} backup matching {file}." },
-    "restore_blocked": { "message": "{source} restore blocked by pre-flight: {reasons} Run a dry run for details, or set force to override." }
+    "not_set_up": {
+      "message": "Radio Guard is not set up."
+    },
+    "source_not_enabled": {
+      "message": "{source} is not enabled in Radio Guard. Add it under Configure."
+    },
+    "backup_failed": {
+      "message": "{source} backup failed: {error}"
+    },
+    "restore_failed": {
+      "message": "{source} restore failed: {error}"
+    },
+    "no_backup": {
+      "message": "No {source} backup matching {file}."
+    },
+    "restore_blocked": {
+      "message": "{source} restore blocked by pre-flight: {reasons} Run a dry run for details, or set force to override."
+    }
   },
   "issues": {
     "backup_failed": {
@@ -189,12 +353,16 @@
           "pick": {
             "title": "Restore the {source} network",
             "description": "The attached coordinator does not match your newest backup. {count} stored backups, newest first. Pick the one taken before the old coordinator failed.",
-            "data": { "file": "Backup" }
+            "data": {
+              "file": "Backup"
+            }
           },
           "preflight": {
             "title": "Pre-flight check",
             "description": "**Backup** `{file}`\nNetwork {backup_identity}, {backup_devices} devices, {backup_age} h old\n\n**Attached coordinator** {current_identity}\n\n**Status:** {status}\n\n**Before you continue**\n{warnings}",
-            "data": { "acknowledge": "The old coordinator is unplugged for good and I have read the above" }
+            "data": {
+              "acknowledge": "The old coordinator is unplugged for good and I have read the above"
+            }
           },
           "blocked": {
             "title": "Restore blocked",
@@ -203,18 +371,231 @@
           "confirm": {
             "title": "Type RESTORE to continue",
             "description": "This overwrites the attached {source} coordinator. It cannot be undone from here.",
-            "data": { "typed": "Confirmation" }
+            "data": {
+              "typed": "Confirmation"
+            }
+          },
+          "wiz_pick": {
+            "title": "Move your {source} network to a new coordinator",
+            "description": "Radio Guard copies your network from a backup onto a new coordinator, so you don't have to re-pair any devices. You only swap the hardware when asked.\n\nChoose the backup to restore. The newest is usually right; pick an older one only if the coordinator was misbehaving before it failed.",
+            "data": {
+              "file": "Backup"
+            }
+          },
+          "wiz_migrate": {
+            "title": "Move to a new {source} coordinator",
+            "description": "Radio Guard moves your network from the coordinator you use now onto a new one, without re-pairing any devices.\n\n**Now in use:** {ieee} on `{port}`, {devices} devices\n\n1. Radio Guard takes a fresh backup of this coordinator.\n2. {source} stops and you swap the hardware.\n3. Your network is written to the new coordinator, {source} starts again and your devices are asked to report in.\n\nThe old coordinator is not changed, so you can go back to it at the end."
+          },
+          "wiz_swap": {
+            "title": "Swap the coordinator",
+            "description": "{source} is stopped.\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "data": {
+              "port": "New coordinator",
+              "unplugged": "The old coordinator is unplugged",
+              "network_address": "Network coordinator address"
+            },
+            "data_description": {
+              "port": "Leave as is if the new coordinator uses the same port as the old one.",
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+            }
+          },
+          "wiz_swap_migrate": {
+            "title": "Swap the coordinator",
+            "description": "{source} is stopped and your fresh backup is saved.\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "data": {
+              "port": "New coordinator",
+              "unplugged": "The old coordinator is unplugged",
+              "network_address": "Network coordinator address"
+            },
+            "data_description": {
+              "port": "Leave as is if the new coordinator uses the same port as the old one.",
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+            }
+          },
+          "wiz_confirm": {
+            "title": "Ready to restore",
+            "description": "**Backup:** {file}, network {network}\n**New coordinator:** `{port}`\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
+          },
+          "wiz_blocked": {
+            "title": "This backup can't be used",
+            "description": "Radio Guard won't restore {file}:\n{reasons}\n\nNothing was changed. Press **Submit** to choose another backup."
+          },
+          "wiz_done": {
+            "title": "Your {source} network is back",
+            "description": "{source} is running on the new coordinator (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}",
+            "menu_options": {
+              "wiz_finish": "Finish",
+              "wiz_devices": "Ask devices to report in again"
+            }
+          },
+          "wiz_done_migrate": {
+            "title": "Move complete",
+            "description": "{source} is running on the new coordinator (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}",
+            "menu_options": {
+              "wiz_finish": "Finish",
+              "wiz_devices": "Ask devices to report in again",
+              "wiz_rollback": "Go back to the old coordinator"
+            }
+          },
+          "wiz_rollback_swap": {
+            "title": "Put the old coordinator back",
+            "description": "{source} is stopped.\n\n1. **Unplug the new coordinator.**\n2. **Plug the old one back in** (it was on `{old_port}`).\n\nRadio Guard then points {source} back at it and checks your network.",
+            "data": {
+              "swapped_back": "The old coordinator is back in, the new one is unplugged"
+            }
+          },
+          "wiz_failed_migrate": {
+            "title": "The move did not finish",
+            "description": "{error}\n\nYour old coordinator still holds your network, unchanged.",
+            "menu_options": {
+              "wiz_rollback": "Go back to the old coordinator",
+              "wiz_close": "Close and leave things as they are"
+            }
           }
         },
         "error": {
           "acknowledge_required": "Tick the box to confirm the old coordinator is unplugged.",
-          "type_restore": "Type RESTORE in capitals."
+          "type_restore": "Type RESTORE in capitals.",
+          "unplugged_required": "Tick the box once the hardware is swapped."
         },
         "abort": {
           "no_backups": "There are no stored {source} backups to restore.",
           "preflight_error": "Could not read the backup or the coordinator: {error}",
           "restore_failed": "Restore failed: {error}. Check the logs; nothing further was changed.",
-          "restore_staged": "Almost there. Radio Guard staged the files in `{path}`. {steps}"
+          "restore_staged": "Almost there. Radio Guard staged the files in `{path}`. {steps}",
+          "swap_unsupported": "{reason}",
+          "swap_busy": "{error}",
+          "swap_failed": "The {source} replacement did not finish: {error}\n\nRadio Guard put {source} back the way it was. Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
+          "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
+          "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
+          "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",
+          "not_loaded": "Radio Guard isn't loaded. Reload it and try again."
+        },
+        "progress": {
+          "stopping": "Stopping {source}…",
+          "wait_stopped": "**Stop {source} now.** It isn't managed by Home Assistant here, so stop it the way you normally do (for example `docker stop zigbee2mqtt`).\n\nThis page continues by itself as soon as {source} goes offline.",
+          "backing_up": "Taking a fresh backup of your coordinator…",
+          "restoring": "Restoring your network onto the new coordinator and starting {source}. This usually takes under a minute.",
+          "writing": "Writing your network into {source}'s data folder…",
+          "wait_started": "**Start {source} now** (for example `docker start zigbee2mqtt`).\n\nThis page continues by itself once {source} is online and Radio Guard has checked the network.",
+          "checking_devices": "Asking your devices to report in on the new coordinator. Mains-powered devices usually answer within a minute.",
+          "starting_old": "Starting {source} on the old coordinator and checking your network…"
+        }
+      }
+    },
+    "coordinator_down": {
+      "title": "{source} coordinator is not responding",
+      "description": "{source} has been offline since {since}. If its coordinator has failed, Radio Guard can put your network on a new one from your backup, without re-pairing anything.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "{source} is not responding",
+            "description": "{source} has stopped responding. If its coordinator has failed, Radio Guard can move your network onto a replacement from your backup, with no re-pairing.\n\nIf {source} is just restarting or being updated, keep waiting: this message clears itself when it's back.",
+            "menu_options": {
+              "wiz_pick": "My coordinator failed, replace it",
+              "wait": "Keep waiting"
+            }
+          },
+          "wiz_pick": {
+            "title": "Move your {source} network to a new coordinator",
+            "description": "Radio Guard copies your network from a backup onto a new coordinator, so you don't have to re-pair any devices. You only swap the hardware when asked.\n\nChoose the backup to restore. The newest is usually right; pick an older one only if the coordinator was misbehaving before it failed.",
+            "data": {
+              "file": "Backup"
+            }
+          },
+          "wiz_migrate": {
+            "title": "Move to a new {source} coordinator",
+            "description": "Radio Guard moves your network from the coordinator you use now onto a new one, without re-pairing any devices.\n\n**Now in use:** {ieee} on `{port}`, {devices} devices\n\n1. Radio Guard takes a fresh backup of this coordinator.\n2. {source} stops and you swap the hardware.\n3. Your network is written to the new coordinator, {source} starts again and your devices are asked to report in.\n\nThe old coordinator is not changed, so you can go back to it at the end."
+          },
+          "wiz_swap": {
+            "title": "Swap the coordinator",
+            "description": "{source} is stopped.\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "data": {
+              "port": "New coordinator",
+              "unplugged": "The old coordinator is unplugged",
+              "network_address": "Network coordinator address"
+            },
+            "data_description": {
+              "port": "Leave as is if the new coordinator uses the same port as the old one.",
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+            }
+          },
+          "wiz_swap_migrate": {
+            "title": "Swap the coordinator",
+            "description": "{source} is stopped and your fresh backup is saved.\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "data": {
+              "port": "New coordinator",
+              "unplugged": "The old coordinator is unplugged",
+              "network_address": "Network coordinator address"
+            },
+            "data_description": {
+              "port": "Leave as is if the new coordinator uses the same port as the old one.",
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+            }
+          },
+          "wiz_confirm": {
+            "title": "Ready to restore",
+            "description": "**Backup:** {file}, network {network}\n**New coordinator:** `{port}`\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
+          },
+          "wiz_blocked": {
+            "title": "This backup can't be used",
+            "description": "Radio Guard won't restore {file}:\n{reasons}\n\nNothing was changed. Press **Submit** to choose another backup."
+          },
+          "wiz_done": {
+            "title": "Your {source} network is back",
+            "description": "{source} is running on the new coordinator (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}",
+            "menu_options": {
+              "wiz_finish": "Finish",
+              "wiz_devices": "Ask devices to report in again"
+            }
+          },
+          "wiz_done_migrate": {
+            "title": "Move complete",
+            "description": "{source} is running on the new coordinator (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}",
+            "menu_options": {
+              "wiz_finish": "Finish",
+              "wiz_devices": "Ask devices to report in again",
+              "wiz_rollback": "Go back to the old coordinator"
+            }
+          },
+          "wiz_rollback_swap": {
+            "title": "Put the old coordinator back",
+            "description": "{source} is stopped.\n\n1. **Unplug the new coordinator.**\n2. **Plug the old one back in** (it was on `{old_port}`).\n\nRadio Guard then points {source} back at it and checks your network.",
+            "data": {
+              "swapped_back": "The old coordinator is back in, the new one is unplugged"
+            }
+          },
+          "wiz_failed_migrate": {
+            "title": "The move did not finish",
+            "description": "{error}\n\nYour old coordinator still holds your network, unchanged.",
+            "menu_options": {
+              "wiz_rollback": "Go back to the old coordinator",
+              "wiz_close": "Close and leave things as they are"
+            }
+          }
+        },
+        "progress": {
+          "stopping": "Stopping {source}…",
+          "wait_stopped": "**Stop {source} now.** It isn't managed by Home Assistant here, so stop it the way you normally do (for example `docker stop zigbee2mqtt`).\n\nThis page continues by itself as soon as {source} goes offline.",
+          "backing_up": "Taking a fresh backup of your coordinator…",
+          "restoring": "Restoring your network onto the new coordinator and starting {source}. This usually takes under a minute.",
+          "writing": "Writing your network into {source}'s data folder…",
+          "wait_started": "**Start {source} now** (for example `docker start zigbee2mqtt`).\n\nThis page continues by itself once {source} is online and Radio Guard has checked the network.",
+          "checking_devices": "Asking your devices to report in on the new coordinator. Mains-powered devices usually answer within a minute.",
+          "starting_old": "Starting {source} on the old coordinator and checking your network…"
+        },
+        "error": {
+          "unplugged_required": "Tick the box once the hardware is swapped."
+        },
+        "abort": {
+          "swap_unsupported": "{reason}",
+          "no_backups": "There are no stored {source} backups to restore.",
+          "swap_busy": "{error}",
+          "swap_failed": "The {source} replacement did not finish: {error}\n\nRadio Guard put {source} back the way it was. Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
+          "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
+          "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
+          "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",
+          "not_loaded": "Radio Guard isn't loaded. Reload it and try again."
         }
       }
     }

@@ -106,7 +106,7 @@ def entry_data(entry_data: dict[str, Any]) -> dict[str, Any]:
 def fake(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> FakeSource:
     src = FakeSource(hass)
     monkeypatch.setattr(
-        "custom_components.radio_guard.coordinator.Zigbee2MQTTSource", lambda hass, base_topic: src
+        "custom_components.radio_guard.coordinator.Zigbee2MQTTSource", lambda hass, base_topic, *a: src
     )
     return src
 
@@ -133,6 +133,8 @@ def seed_backup(
 async def setup_rg(hass: HomeAssistant, entry: MockConfigEntry) -> MockConfigEntry:
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await entry.runtime_data.async_refresh()  # coordinator_replaced needs two readings
     await hass.async_block_till_done()
     return entry
 
@@ -161,6 +163,7 @@ async def replaced(
     name = seed_backup(backup_root, timedelta(hours=2), {"ieee": OLD_IEEE, "device_count": 12})
     fake.identity = {"ieee": NEW_IEEE, "device_count": 1}
     await setup_rg(hass, mock_config_entry)
+    await mock_config_entry.runtime_data.async_refresh()  # replaced needs two readings
     assert issue(hass, REPLACED) is not None
     return name
 

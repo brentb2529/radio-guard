@@ -10,7 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigEntryState,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
@@ -26,16 +32,19 @@ from .const import (
     CONF_HEARTBEAT_INTERVAL,
     CONF_HEARTBEAT_TOPIC,
     CONF_MAX_RESTORE_AGE_DAYS,
+    CONF_OFFLINE_MINUTES,
     CONF_RETENTION,
     CONF_SOURCES,
     CONF_STALE_HOURS,
     CONF_Z2M_BASE_TOPIC,
+    CONF_Z2M_DATA_DIR,
     DEFAULT_BACKUP_DIR,
     DEFAULT_BACKUP_HOUR,
     DEFAULT_BACKUP_MINUTE,
     DEFAULT_HEARTBEAT_INTERVAL,
     DEFAULT_HEARTBEAT_TOPIC,
     DEFAULT_MAX_RESTORE_AGE_DAYS,
+    DEFAULT_OFFLINE_MINUTES,
     DEFAULT_RETENTION,
     DEFAULT_STALE_HOURS,
     DEFAULT_Z2M_BASE_TOPIC,
@@ -45,6 +54,7 @@ from .const import (
     SOURCE_ZHA,
     SOURCE_ZWAVE,
 )
+from .wizard import ReplaceWizardMixin
 
 SECTION_SCHEDULE = "schedule"
 SECTION_STORAGE = "storage"
@@ -127,6 +137,18 @@ def _options_schema(current: dict[str, Any], mqtt_loaded: bool) -> vol.Schema:
                                 mode=selector.NumberSelectorMode.BOX,
                             )
                         ),
+                        vol.Optional(
+                            CONF_OFFLINE_MINUTES,
+                            default=current.get(CONF_OFFLINE_MINUTES, DEFAULT_OFFLINE_MINUTES),
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=1,
+                                max=1440,
+                                step=1,
+                                unit_of_measurement="min",
+                                mode=selector.NumberSelectorMode.BOX,
+                            )
+                        ),
                     }
                 ),
                 {"collapsed": True},
@@ -137,6 +159,10 @@ def _options_schema(current: dict[str, Any], mqtt_loaded: bool) -> vol.Schema:
                         vol.Optional(
                             CONF_Z2M_BASE_TOPIC,
                             default=current.get(CONF_Z2M_BASE_TOPIC, DEFAULT_Z2M_BASE_TOPIC),
+                        ): str,
+                        vol.Optional(
+                            CONF_Z2M_DATA_DIR,
+                            description={"suggested_value": current.get(CONF_Z2M_DATA_DIR)},
                         ): str,
                     }
                 ),
@@ -206,11 +232,14 @@ def flatten_options(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_STALE_HOURS,
         CONF_HEARTBEAT_INTERVAL,
         CONF_MAX_RESTORE_AGE_DAYS,
+        CONF_OFFLINE_MINUTES,
     ):
         if key in out:
             out[key] = int(out[key])
     if CONF_BACKUP_DIR in out:
         out[CONF_BACKUP_DIR] = _safe_rel_dir(out[CONF_BACKUP_DIR])
+    if CONF_Z2M_DATA_DIR in out:
+        out[CONF_Z2M_DATA_DIR] = str(out[CONF_Z2M_DATA_DIR] or "").strip().rstrip("/")
     if CONF_Z2M_BASE_TOPIC in out:
         out[CONF_Z2M_BASE_TOPIC] = str(out[CONF_Z2M_BASE_TOPIC]).strip().strip("/") or DEFAULT_Z2M_BASE_TOPIC
     return out
@@ -269,10 +298,52 @@ class RadioGuardConfigFlow(ConfigFlow, domain=DOMAIN):
         return RadioGuardOptionsFlow()
 
 
-class RadioGuardOptionsFlow(OptionsFlow):
-    """Everything configurable, in collapsible sections."""
+class RadioGuardOptionsFlow(ReplaceWizardMixin, OptionsFlow):
+    """Settings, plus the guided coordinator replacement / migration."""
+
+    sid: str = ""
+    _next: str = ""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return self.async_show_menu(step_id="init", menu_options=["settings", "replace", "migrate"])
+
+    async def async_step_replace(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        self._next = "replace"
+        return await self.async_step_pick_source()
+
+    async def async_step_migrate(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        self._next = "migrate"
+        return await self.async_step_pick_source()
+
+    async def async_step_pick_source(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if self.config_entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="not_loaded")
+        sources = list(self.config_entry.runtime_data.states)
+        if user_input is not None or len(sources) == 1:
+            self.sid = user_input["source"] if user_input else sources[0]
+            if self._next == "migrate":
+                return await self.async_step_wiz_migrate()
+            return await self.async_step_wiz_pick()
+        return self.async_show_form(
+            step_id="pick_source",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("source", default=sources[0]): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value=s, label=SOURCE_NAMES[s]) for s in sources
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def _wizard_finish(self) -> ConfigFlowResult:
+        return self.async_create_entry(title="", data=dict(self.config_entry.options))
+
+    async def async_step_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             flat = flatten_options(user_input)
@@ -283,7 +354,7 @@ class RadioGuardOptionsFlow(OptionsFlow):
                 return self.async_create_entry(title="", data={**internal, **flat})
         current = {**self.config_entry.data, **self.config_entry.options}
         return self.async_show_form(
-            step_id="init",
+            step_id="settings",
             data_schema=_options_schema(current, "mqtt" in self.hass.config.components),
             errors=errors,
         )

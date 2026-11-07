@@ -51,6 +51,14 @@ from custom_components.radio_guard.const import (
 COMPONENT_DIR = Path(__file__).parent.parent / "custom_components" / DOMAIN
 
 
+async def _open_settings(hass, entry_id):
+    """Configure opens a menu; go to the Settings page."""
+    result = await hass.config_entries.options.async_init(entry_id)
+    assert result["type"] is FlowResultType.MENU
+    assert result["menu_options"] == ["settings", "replace", "migrate"]
+    return await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "settings"})
+
+
 # ------------------------------------------------------------------ helpers
 
 
@@ -362,9 +370,9 @@ def test_flatten_options_backup_dir_cannot_escape_config() -> None:
 async def test_options_form_sections_collapsed_with_current_defaults(
     hass: HomeAssistant, loaded_entry: MockConfigEntry
 ) -> None:
-    result = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    result = await _open_settings(hass, loaded_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "settings"
     schema: vol.Schema = result["data_schema"]
 
     sections = _sections(schema)
@@ -380,8 +388,9 @@ async def test_options_form_sections_collapsed_with_current_defaults(
         CONF_RETENTION: 3,
         CONF_STALE_HOURS: 36,
         CONF_MAX_RESTORE_AGE_DAYS: 7,
+        "offline_minutes": 10,
     }
-    assert _defaults(sections[SECTION_Z2M].schema) == {CONF_Z2M_BASE_TOPIC: "zigbee2mqtt"}
+    assert _defaults(sections[SECTION_Z2M].schema)[CONF_Z2M_BASE_TOPIC] == "zigbee2mqtt"
     assert _defaults(sections[SECTION_STORAGE].schema) == {CONF_BACKUP_DIR: "radio_guard"}
     assert _defaults(sections[SECTION_HEARTBEAT].schema) == {
         CONF_HEARTBEAT_ENABLED: False,
@@ -400,7 +409,7 @@ async def test_options_defaults_prefer_options_over_data(
     assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await _open_settings(hass, mock_config_entry.entry_id)
     schema = result["data_schema"]
     assert {str(k): k for k in schema.schema}[CONF_SOURCES].default() == [SOURCE_ZHA]
     assert _defaults(_sections(schema)[SECTION_SCHEDULE].schema)[CONF_BACKUP_TIME] == "22:05:00"
@@ -418,7 +427,7 @@ async def test_options_heartbeat_default_follows_mqtt_when_unset(
     if mqtt_loaded:
         hass.config.components.add("mqtt")
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _open_settings(hass, entry.entry_id)
     hb = _defaults(_sections(result["data_schema"])[SECTION_HEARTBEAT].schema)
     assert hb[CONF_HEARTBEAT_ENABLED] is mqtt_loaded
 
@@ -436,7 +445,7 @@ async def test_options_save_flattens_preserves_internal_and_reloads(
     first_coord = mock_config_entry.runtime_data
     built_before = len(fake_sources)
 
-    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await _open_settings(hass, mock_config_entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -475,7 +484,7 @@ async def test_options_save_flattens_preserves_internal_and_reloads(
 
 async def test_options_save_does_not_clobber_data(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
     data_before = dict(loaded_entry.data)
-    result = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    result = await _open_settings(hass, loaded_entry.entry_id)
     await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_SOURCES: [SOURCE_Z2M], **_all_sections()}
     )
@@ -486,7 +495,7 @@ async def test_options_save_does_not_clobber_data(hass: HomeAssistant, loaded_en
 
 
 async def test_options_no_sources_error(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
-    result = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    result = await _open_settings(hass, loaded_entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_SOURCES: [], **_all_sections()}
     )
@@ -510,7 +519,7 @@ async def test_options_no_sources_error(hass: HomeAssistant, loaded_entry: MockC
 async def test_options_out_of_range_rejected(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, section_key: str, values: dict[str, Any]
 ) -> None:
-    result = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    result = await _open_settings(hass, loaded_entry.entry_id)
     with pytest.raises(InvalidData):
         await hass.config_entries.options.async_configure(
             result["flow_id"], {CONF_SOURCES: [SOURCE_Z2M], **_all_sections(**{section_key: values})}
@@ -519,7 +528,7 @@ async def test_options_out_of_range_rejected(
 
 
 async def test_options_missing_section_rejected(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
-    result = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    result = await _open_settings(hass, loaded_entry.entry_id)
     sections = _all_sections()
     sections.pop(SECTION_HEARTBEAT)
     with pytest.raises(InvalidData):

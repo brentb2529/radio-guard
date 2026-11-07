@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import io
 import json
 import logging
@@ -38,7 +39,16 @@ import yaml
 from homeassistant.core import HomeAssistant, callback
 
 from ..const import SOURCE_NAMES, SOURCE_Z2M, Z2M_BACKUP_TIMEOUT
-from .base import BackupPayload, BackupSource, RestoreCheck, RestoreStaged, SourceUnavailable
+from .base import (
+    BackupPayload,
+    BackupSource,
+    DeviceReport,
+    PortOption,
+    RestoreCheck,
+    RestoreStaged,
+    SourceUnavailable,
+    SwapPlan,
+)
 from .ident import norm_hex, norm_pan_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,9 +75,13 @@ class Zigbee2MQTTSource(BackupSource):
     id = SOURCE_Z2M
     name = SOURCE_NAMES[SOURCE_Z2M]
 
-    def __init__(self, hass: HomeAssistant, base_topic: str) -> None:
+    def __init__(self, hass: HomeAssistant, base_topic: str, data_dir: str | None = None) -> None:
         super().__init__(hass)
         self.base_topic = base_topic.rstrip("/")
+        self.data_dir_option = (data_dir or "").strip() or None
+        self._offline_event = asyncio.Event()
+        self._devices: list[dict[str, Any]] = []
+        self._ports_before: set[str] = set()
         self._info: dict[str, Any] = {}
         self._state: str | None = None
         self._info_event = asyncio.Event()
@@ -113,8 +127,10 @@ class Zigbee2MQTTSource(BackupSource):
             self._state = state
             if state == "online":
                 self._online_event.set()
+                self._offline_event.clear()
             else:
                 self._online_event.clear()
+                self._offline_event.set()
                 self._info_event.clear()
 
         @callback
@@ -131,7 +147,19 @@ class Zigbee2MQTTSource(BackupSource):
             if fut is not None and not fut.done():
                 fut.set_result(resp)
 
+        @callback
+        def _on_devices(msg: mqtt.ReceiveMessage) -> None:
+            try:
+                devices = json.loads(msg.payload)
+            except ValueError:
+                return
+            if isinstance(devices, list):
+                self._devices = [d for d in devices if isinstance(d, dict)]
+
         base = self.base_topic
+        self._unsubs.append(
+            await mqtt.async_subscribe(self.hass, f"{base}/bridge/devices", _on_devices, qos=1)
+        )
         self._unsubs.append(await mqtt.async_subscribe(self.hass, f"{base}/bridge/info", _on_info, qos=1))
         self._unsubs.append(await mqtt.async_subscribe(self.hass, f"{base}/bridge/state", _on_state, qos=1))
         self._unsubs.append(
@@ -281,6 +309,11 @@ class Zigbee2MQTTSource(BackupSource):
         return None, None
 
     def _fallback_data_dir(self) -> Path | None:
+        if self.data_dir_option:
+            p = Path(self.data_dir_option)
+            if not p.is_absolute():
+                p = Path(self.hass.config.path(self.data_dir_option))
+            return p if p.is_dir() else None
         for p in (Path(self.hass.config.path("zigbee2mqtt")), Path("/share/zigbee2mqtt")):
             if (p / "configuration.yaml").exists():
                 return p
@@ -443,6 +476,204 @@ class Zigbee2MQTTSource(BackupSource):
             ident.get("ieee"),
         )
 
+    # ------------------------------------------------- guided replacement
+
+    async def async_health(self) -> bool | None:
+        """Explicit bridge/state only. No state yet or broker disconnected is 'unknown', never 'down'."""
+        if not self.available() or not self._unsubs:
+            return None
+        from homeassistant.components import mqtt  # noqa: PLC0415
+
+        if not mqtt.is_connected(self.hass):
+            return None
+        if self._state == "online":
+            return True
+        if self._state == "offline":
+            return False
+        return None
+
+    async def _swap_target(self) -> tuple[Any, Path | None]:
+        mgr, data_dir = await self._addon()
+        if mgr is None:
+            data_dir = await self.hass.async_add_executor_job(self._fallback_data_dir)
+        return mgr, data_dir
+
+    async def async_swap_plan(self) -> SwapPlan:
+        mgr, data_dir = await self._swap_target()
+        if mgr is not None and data_dir is None:
+            return SwapPlan(
+                supported=False,
+                reason=(
+                    "The Zigbee2MQTT add-on keeps its data where Home Assistant cannot reach it. In the add-on's "
+                    "configuration, set data_path to /config/zigbee2mqtt (the default) and restart it."
+                ),
+            )
+        if data_dir is None:
+            return SwapPlan(
+                supported=False,
+                reason=(
+                    "Radio Guard cannot see Zigbee2MQTT's data folder. Under Radio Guard > Configure > "
+                    "Zigbee2MQTT, set the data folder as Home Assistant sees it (for example /config/zigbee2mqtt "
+                    "or /share/zigbee2mqtt; mount it into Home Assistant if Zigbee2MQTT runs elsewhere)."
+                ),
+            )
+        cfg = await self.hass.async_add_executor_job(self._read_yaml, data_dir / "configuration.yaml")
+        port = (cfg.get("serial") or {}).get("port")
+        details: dict[str, Any] = {"data_dir": str(data_dir)}
+        if mgr is not None:
+            info = await mgr.async_get_addon_info()
+            port = ((info.options or {}).get("serial") or {}).get("port") or port
+            details["addon"] = mgr.addon_slug
+        return SwapPlan(
+            supported=True,
+            automatic=mgr is not None,
+            choose_port=True,
+            current_port=port,
+            details=details,
+        )
+
+    async def async_swap_ports(self) -> list[PortOption]:
+        ports = await self.hass.async_add_executor_job(_serial_ports)
+        opts = [PortOption(path, label, new=path not in self._ports_before) for path, label in ports]
+        opts.sort(key=lambda o: (not o.new, o.label))
+        return opts
+
+    async def async_swap_stop(self, plan: SwapPlan) -> None:
+        if not self._ports_before:  # keep the first snapshot if the user goes back a step
+            self._ports_before = {p for p, _ in await self.hass.async_add_executor_job(_serial_ports)}
+        if plan.automatic:
+            mgr, _ = await self._addon()
+            _LOGGER.warning("Stopping Z2M add-on %s to replace the coordinator", mgr.addon_slug)
+            await mgr.async_stop_addon()
+            await self.async_wait_stopped(60)
+            return
+        await self.async_wait_stopped(None)
+
+    async def async_wait_stopped(self, timeout: float | None) -> None:
+        if self._state != "online":
+            return
+        await asyncio.wait_for(self._offline_event.wait(), timeout)
+
+    async def async_swap_apply(self, data: bytes, meta: dict[str, Any], port: str | None) -> None:
+        if self._state == "online":
+            raise RuntimeError("Zigbee2MQTT is running again; stop it before restoring")
+        ocbf = await self.hass.async_add_executor_job(self._ocbf_from_zip, data)
+        if ocbf is None:
+            raise RuntimeError("This backup has no coordinator_backup.json, so it cannot be restored")
+        mgr, data_dir = await self._swap_target()
+        if data_dir is None:
+            raise RuntimeError("Zigbee2MQTT's data folder is no longer reachable")
+        await self.hass.async_add_executor_job(self._write_restore_files, data, data_dir, ocbf, True)
+        await self.async_swap_set_port(port)
+        self._online_event.clear()
+        self._info_event.clear()
+        self._info = {}
+
+    async def async_swap_set_port(self, port: str | None) -> None:
+        if not port:
+            return
+        mgr, data_dir = await self._swap_target()
+        if data_dir is not None:
+            await self.hass.async_add_executor_job(_set_config_port, data_dir / "configuration.yaml", port)
+        if mgr is not None:
+            info = await mgr.async_get_addon_info()
+            options = dict(info.options or {})
+            if isinstance(options.get("serial"), dict):
+                options["serial"] = {**options["serial"], "port": port}
+                await mgr.async_set_addon_options(options)
+        self._online_event.clear()
+        self._info_event.clear()
+        self._info = {}
+
+    async def async_swap_start(self, plan: SwapPlan) -> None:
+        if plan.automatic:
+            mgr, _ = await self._addon()
+            _LOGGER.info("Starting Z2M add-on %s on the new coordinator", mgr.addon_slug)
+            await mgr.async_start_addon()
+
+    async def async_wait_started(self, timeout: float | None) -> None:
+        await asyncio.wait_for(self._online_event.wait(), timeout)
+
+    async def async_swap_verify(self, data: bytes, meta: dict[str, Any]) -> dict[str, Any]:
+        ocbf = await self.hass.async_add_executor_job(self._ocbf_from_zip, data)
+        try:
+            await asyncio.wait_for(self._info_event.wait(), 60)
+        except TimeoutError as err:
+            raise RuntimeError("Zigbee2MQTT started but did not report its network within a minute") from err
+        ident = await self.async_identity()
+        bak = summarize_ocbf(ocbf or {})
+        if bak.get("extended_pan_id") and ident.get("extended_pan_id") != bak.get("extended_pan_id"):
+            raise RuntimeError(
+                f"Zigbee2MQTT started a different network ({ident.get('extended_pan_id')}) instead of the "
+                f"backup's ({bak.get('extended_pan_id')}). Nothing was lost: the previous files were kept "
+                "next to the new ones. Run the replacement again; if it repeats, check the adapter type "
+                "(serial.adapter) matches the new coordinator."
+            )
+        return ident
+
+    async def async_check_devices(self, timeout: float) -> DeviceReport | None:
+        """Ask every mains-powered device to report, and listen for anything that talks.
+
+        Only live (non-retained) messages count: retained state from before the swap proves nothing.
+        A device can only answer if the new coordinator carries the network it was paired to.
+        """
+        from homeassistant.components import mqtt  # noqa: PLC0415
+
+        devices = [d for d in self._devices if d.get("type") in ("Router", "EndDevice")]
+        if not devices:
+            return None
+        names = sorted((str(d.get("friendly_name")) for d in devices), key=len, reverse=True)
+        mains = {str(d["friendly_name"]) for d in devices if d.get("type") == "Router"}
+        battery = {str(d["friendly_name"]) for d in devices} - mains
+        seen: set[str] = set()
+        all_mains = asyncio.Event()
+        all_devices = asyncio.Event()
+        base = self.base_topic
+
+        @callback
+        def _on_any(msg: mqtt.ReceiveMessage) -> None:
+            if msg.retain:
+                return
+            rest = msg.topic[len(base) + 1 :]
+            if rest.startswith("bridge/") or rest.endswith(("/set", "/get")):
+                return
+            for name in names:
+                if rest == name or rest.startswith(name + "/"):
+                    if rest.endswith("/availability") and "offline" in str(msg.payload):
+                        return
+                    seen.add(name)
+                    if mains <= seen:
+                        all_mains.set()
+                    if (mains | battery) <= seen:
+                        all_devices.set()
+                    return
+
+        unsub = await mqtt.async_subscribe(self.hass, f"{base}/#", _on_any, qos=0)
+        try:
+            await asyncio.sleep(1)  # let the subscription settle (HA debounces subscribes)
+            for name in sorted(mains):
+                await mqtt.async_publish(self.hass, f"{base}/{name}/get", json.dumps({"state": ""}), qos=0)
+                await asyncio.sleep(0.2)
+            if mains:
+                try:
+                    await asyncio.wait_for(all_mains.wait(), timeout)
+                except TimeoutError:
+                    pass
+            if battery - seen and not (mains - seen):
+                # Mains are all back; give sleepy devices a short extra window, they usually wake soon.
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(all_devices.wait(), min(30, timeout))
+        finally:
+            unsub()
+        return DeviceReport(
+            mains_total=len(mains),
+            mains_back=len(mains & seen),
+            battery_total=len(battery),
+            battery_back=len(battery & seen),
+            missing_mains=sorted(mains - seen),
+            missing_battery=sorted(battery - seen),
+        )
+
     @staticmethod
     def _write_restore_files(data: bytes, dest: Path, ocbf: dict[str, Any], patch_live_config: bool) -> None:
         """Write backup data files into dest, patching configuration.yaml advanced.* to match the OCBF."""
@@ -473,6 +704,31 @@ class Zigbee2MQTTSource(BackupSource):
         if live_path.exists():
             _atomic_write(live_path.with_suffix(".yaml.radio_guard.bak"), live_path.read_bytes())
         _atomic_write(live_path, yaml.safe_dump(cfg, sort_keys=False).encode())
+
+
+def _serial_ports() -> list[tuple[str, str]]:
+    """(by-id path or device, human label) for every serial port HA can see."""
+    try:
+        from homeassistant.components.usb import get_serial_by_id, human_readable_device_name  # noqa: PLC0415
+        from homeassistant.components.usb.utils import scan_serial_ports  # noqa: PLC0415
+    except ImportError:
+        return []
+    out = []
+    for dev in scan_serial_ports():
+        path = get_serial_by_id(dev.device)
+        label = human_readable_device_name(
+            path, dev.serial_number, dev.manufacturer, dev.description, dev.vid, dev.pid
+        )
+        out.append((path, label))
+    return out
+
+
+def _set_config_port(path: Path, port: str) -> None:
+    cfg = (yaml.load(path.read_text(), Loader=_SafeLoader) or {}) if path.exists() else {}
+    serial = cfg.get("serial") or {}
+    serial["port"] = port
+    cfg["serial"] = serial
+    _atomic_write(path, yaml.safe_dump(cfg, sort_keys=False).encode())
 
 
 def _atomic_write(path: Path, data: bytes) -> None:

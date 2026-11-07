@@ -32,6 +32,8 @@ CONF_BACKUP_TIME = "backup_time"  # "HH:MM:SS" (config flow); stored as hour/min
 CONF_FIRST_BACKUP = "first_backup"
 CONF_MAX_RESTORE_AGE_DAYS = "max_restore_age_days"
 CONF_FIRST_BACKUP_DONE = "_first_backup_done"
+CONF_Z2M_DATA_DIR = "z2m_data_dir"
+CONF_OFFLINE_MINUTES = "offline_minutes"
 
 DEFAULT_Z2M_BASE_TOPIC = "zigbee2mqtt"
 DEFAULT_BACKUP_HOUR = 3
@@ -43,6 +45,8 @@ DEFAULT_HEARTBEAT_ENABLED = True
 DEFAULT_HEARTBEAT_TOPIC = "radio_guard/heartbeat"
 DEFAULT_HEARTBEAT_INTERVAL = 30  # seconds
 DEFAULT_MAX_RESTORE_AGE_DAYS = 7
+DEFAULT_OFFLINE_MINUTES = 10
+STARTUP_GRACE_MINUTES = 5
 
 # Services
 SERVICE_BACKUP_NOW = "backup_now"
@@ -61,6 +65,7 @@ ISSUE_BACKUP_STALE = "backup_stale"
 ISSUE_BACKUP_NEVER = "backup_never"
 ISSUE_COORDINATOR_REPLACED = "coordinator_replaced"
 ISSUE_RESTORE_RESULT = "restore_result"
+ISSUE_COORDINATOR_DOWN = "coordinator_down"
 NOTIFICATION_FIRST_BACKUP = f"{DOMAIN}_first_backup"
 NOTIFICATION_RESTORE = f"{DOMAIN}_restore"
 PRE_RESTORE_PREFIX = "pre_restore_"

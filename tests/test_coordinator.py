@@ -66,6 +66,14 @@ BINARY_KEYS = ("backup_stale", "coordinator_replaced", "source_loaded", "backup_
 # --------------------------------------------------------------- fake source
 
 
+async def _open_settings(hass, entry_id):
+    """Configure opens a menu; go to the Settings page."""
+    result = await hass.config_entries.options.async_init(entry_id)
+    assert result["type"] is FlowResultType.MENU
+    assert result["menu_options"] == ["settings", "replace", "migrate"]
+    return await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "settings"})
+
+
 class FakeSource(BackupSource):
     """Scriptable stand-in for a Z2M / ZHA / Z-Wave JS source."""
 
@@ -143,7 +151,7 @@ def fakes(hass: HomeAssistant) -> dict[str, FakeSource]:
     with (
         patch(
             "custom_components.radio_guard.coordinator.Zigbee2MQTTSource",
-            lambda hass, topic: fk[SOURCE_Z2M],
+            lambda hass, topic, *a: fk[SOURCE_Z2M],
         ),
         patch("custom_components.radio_guard.coordinator.ZHASource", lambda hass: fk[SOURCE_ZHA]),
         patch("custom_components.radio_guard.coordinator.ZWaveJSSource", lambda hass: fk[SOURCE_ZWAVE]),
@@ -411,7 +419,7 @@ async def test_first_backup_flag_preserved_across_options_save(
     assert first_backup_entry.options[CONF_FIRST_BACKUP_DONE] is True
 
     # Save options through the real options flow (sectioned schema).
-    result = await hass.config_entries.options.async_init(first_backup_entry.entry_id)
+    result = await _open_settings(hass, first_backup_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -720,6 +728,9 @@ async def test_coordinator_replaced_detection(
     coord = await setup_entry(hass, mock_config_entry)
 
     assert coord.states[SOURCE_Z2M].coordinator_replaced is replaced
+    # One reading is never enough (a half-started Z2M can publish partial info).
+    assert issue(hass, f"coordinator_replaced_{SOURCE_Z2M}") is None
+    await refresh(hass, coord)
     iss = issue(hass, f"coordinator_replaced_{SOURCE_Z2M}")
     assert (iss is not None) is replaced
     state = hass.states.get(entity_id(hass, "binary_sensor", SOURCE_Z2M, "coordinator_replaced"))
@@ -745,6 +756,8 @@ async def test_coordinator_replaced_zwave_home_id(
     fakes[SOURCE_ZWAVE].identity = {"home_id": 0x0BADF00D}
     await refresh(hass, coord)
     assert coord.states[SOURCE_ZWAVE].coordinator_replaced
+    assert issue(hass, f"coordinator_replaced_{SOURCE_ZWAVE}") is None
+    await refresh(hass, coord)
     assert issue(hass, f"coordinator_replaced_{SOURCE_ZWAVE}") is not None
 
 
@@ -857,6 +870,7 @@ async def replaced(
     fakes[SOURCE_Z2M].backup_meta = {"ieee": IEEE_B, "device_count": 3}
     coord = await setup_entry(hass, mock_config_entry)
     assert coord.states[SOURCE_Z2M].coordinator_replaced
+    await refresh(hass, coord)  # the Repair needs two readings
     return coord, path
 
 

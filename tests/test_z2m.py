@@ -117,13 +117,14 @@ async def test_setup_subscribes_once_and_teardown_releases(hass: HomeAssistant, 
     src = Zigbee2MQTTSource(hass, "z2m")
     await src.async_setup()
     assert _subscribed_topics(mqtt_mock) == [
+        "z2m/bridge/devices",
         "z2m/bridge/info",
         "z2m/bridge/state",
         "z2m/bridge/response/backup",
     ]
-    assert len(src._unsubs) == 3
+    assert len(src._unsubs) == 4
     await src.async_setup()  # idempotent
-    assert len(_subscribed_topics(mqtt_mock)) == 3
+    assert len(_subscribed_topics(mqtt_mock)) == 4
 
     await src.async_teardown()
     assert src._unsubs == []
@@ -499,7 +500,7 @@ async def test_request_lazily_sets_up(hass: HomeAssistant, mqtt_mock) -> None:
     assert src._unsubs == []
     task = hass.async_create_task(src.async_backup())
     await _wait_for_request(mqtt_mock)
-    assert len(src._unsubs) == 3
+    assert len(src._unsubs) == 4
     _respond_ok(hass, "rg-1")
     await task
     await src.async_teardown()
