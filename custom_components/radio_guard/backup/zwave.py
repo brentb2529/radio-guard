@@ -124,9 +124,11 @@ class ZWaveJSSource(BackupSource):
             fn = getattr(ctrl, check, None)
             if fn is None:
                 continue
-            with suppress(Exception):
-                if await fn():
-                    raise RuntimeError("Firmware update in progress")
+            busy = False
+            with suppress(Exception):  # a failing query must not block; a True answer must
+                busy = bool(await fn())
+            if busy:
+                raise RuntimeError("Firmware update in progress")
 
     def _keys(self, entry: ConfigEntry | None) -> dict[str, str]:
         if entry is None:

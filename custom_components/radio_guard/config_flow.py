@@ -210,11 +210,19 @@ def flatten_options(user_input: dict[str, Any]) -> dict[str, Any]:
         if key in out:
             out[key] = int(out[key])
     if CONF_BACKUP_DIR in out:
-        clean = str(out[CONF_BACKUP_DIR]).strip().strip("/").replace("..", "")
-        out[CONF_BACKUP_DIR] = clean or DEFAULT_BACKUP_DIR
+        out[CONF_BACKUP_DIR] = _safe_rel_dir(out[CONF_BACKUP_DIR])
     if CONF_Z2M_BASE_TOPIC in out:
         out[CONF_Z2M_BASE_TOPIC] = str(out[CONF_Z2M_BASE_TOPIC]).strip().strip("/") or DEFAULT_Z2M_BASE_TOPIC
     return out
+
+
+def _safe_rel_dir(value: Any) -> str:
+    """A relative folder under /config: drop empty, '.' and '..' parts and any leading '/'.
+
+    Backups hold network keys, so the folder must never resolve outside the config dir.
+    """
+    parts = [p for p in str(value).strip().replace("\\", "/").split("/") if p not in ("", ".", "..")]
+    return "/".join(parts) or DEFAULT_BACKUP_DIR
 
 
 class RadioGuardConfigFlow(ConfigFlow, domain=DOMAIN):
