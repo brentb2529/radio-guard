@@ -1,0 +1,53 @@
+blueprint:
+  name: Radio Guard - notify when a coordinator backup is stale or failed
+  description: >
+    Sends a notification when a Radio Guard "Backup stale" sensor has been on for
+    a while. Pick the problem sensor for each coordinator you protect.
+  domain: automation
+  source_url: https://github.com/bbensten/radio-guard/blob/main/blueprints/automation/radio_guard/backup_problem_notify.yaml
+  input:
+    stale_sensors:
+      name: Backup stale sensors
+      description: One or more Radio Guard "Backup stale" sensors.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            integration: radio_guard
+            domain: binary_sensor
+            device_class: problem
+    grace:
+      name: Grace period
+      description: How long the sensor must stay on before notifying.
+      default:
+        hours: 1
+      selector:
+        duration:
+    notify_service:
+      name: Notify service
+      description: For example notify.mobile_app_my_phone
+      default: notify.notify
+      selector:
+        text:
+
+triggers:
+  - trigger: state
+    entity_id: !input stale_sensors
+    to: "on"
+    for: !input grace
+
+conditions: []
+
+actions:
+  - variables:
+      name: "{{ state_attr(trigger.entity_id, 'friendly_name') }}"
+      last_error: "{{ state_attr(trigger.entity_id, 'last_error') or 'none' }}"
+      last_backup: "{{ state_attr(trigger.entity_id, 'last_backup') or 'never' }}"
+  - action: !input notify_service
+    data:
+      title: "Coordinator backup needs attention"
+      message: >
+        {{ name }}: newest backup {{ last_backup }}. Last error: {{ last_error }}.
+        Open Settings > Repairs in Home Assistant to run a backup.
+
+mode: parallel

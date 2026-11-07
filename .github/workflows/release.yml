@@ -1,0 +1,20 @@
+name: Release
+on:
+  release:
+    types: [published]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check manifest version matches tag
+        run: |
+          v=$(jq -r .version custom_components/radio_guard/manifest.json)
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "manifest $v != tag $GITHUB_REF_NAME"; exit 1; }
+      - name: Zip integration
+        run: cd custom_components/radio_guard && zip -r ../../radio_guard.zip .
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: radio_guard.zip

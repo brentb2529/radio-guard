@@ -12,13 +12,24 @@
 # Also handles: broker down. If the ESP loses MQTT entirely it does NOT cycle
 # power (a dead broker is not a dead HA). It only acts on "connected to broker
 # but no heartbeat".
+#
+# Boot hole: after the ESP itself reboots it has never seen a heartbeat, so by
+# default it will not act until one arrives. Set `boot_grace` > 0 to instead
+# treat "connected to broker, no heartbeat for boot_grace seconds since boot"
+# as a hung HA. After `max_cycles_per_day` it stops cycling for the day.
+#
+# Pins: GPIO26/27/32/33 are safe for the relay. Avoid strapping pins
+# (GPIO0, 2, 12, 15) for the relay; GPIO2 is fine for the LED.
+# Timer arithmetic relies on uint32_t wraparound of millis(); keep it unsigned.
 
 substitutions:
   name: radio-guard-watchdog
   heartbeat_topic: radio_guard/heartbeat
   timeout: "300"        # seconds without heartbeat before cycling
   cooldown: "3600"      # seconds after a cycle before another is allowed
-  off_time: "10"        # seconds to hold power off
+  off_time: "15"        # seconds to hold power off (NUC bricks need >10 s to discharge)
+  boot_grace: "0"       # 0 = never act until first heartbeat seen; else seconds since boot
+  max_cycles_per_day: "3"
   relay_pin: GPIO26
   led_pin: GPIO2
 
@@ -70,6 +81,12 @@ globals:
   - id: cycles
     type: uint32_t
     initial_value: '0'
+  - id: cycles_today
+    type: uint32_t
+    initial_value: '0'
+  - id: day_start
+    type: uint32_t
+    initial_value: '0'
 
 switch:
   # ON = HA powered. Relay wired NC, so "on" means relay coil off.
@@ -80,6 +97,9 @@ switch:
       number: ${relay_pin}
       inverted: true
     restore_mode: ALWAYS_ON
+  # Exposed to HA on purpose so you can disarm before maintenance. Put it on a
+  # dashboard where its state is visible; an automation that flips it off
+  # silently defeats the watchdog.
   - platform: template
     id: armed
     name: "Watchdog armed"
@@ -105,22 +125,33 @@ sensor:
 interval:
   - interval: 10s
     then:
-      - lambda: |-
-          if (!id(armed).state) return;
-          if (!id(mqtt_client).is_connected()) return;      // broker down != HA down
-          if (id(heartbeats_seen) == 0) return;             // never seen one; don't guess
-          uint32_t now = millis();
-          uint32_t silent = (now - id(last_heartbeat)) / 1000;
-          uint32_t since_cycle = (now - id(last_cycle)) / 1000;
-          if (silent < ${timeout}) return;
-          if (id(last_cycle) != 0 && since_cycle < ${cooldown}) return;
-          ESP_LOGW("watchdog", "No heartbeat for %u s; cycling HA power", silent);
-          id(last_cycle) = now;
-          id(cycles) += 1;
-          id(ha_power).turn_off();
-      - delay: ${off_time}s
-      - switch.turn_on: ha_power
-      - lambda: 'id(last_heartbeat) = millis();'   // give HA a full timeout to boot
+      - if:
+          condition:
+            lambda: |-
+              uint32_t now = millis();
+              if (now - id(day_start) > 86400000UL) { id(day_start) = now; id(cycles_today) = 0; }
+              if (!id(armed).state) return false;
+              if (id(cycles_today) >= ${max_cycles_per_day}) return false;
+              if (!id(mqtt_client).is_connected()) return false;   // broker down != HA down
+              uint32_t since_cycle = (now - id(last_cycle)) / 1000;
+              if (id(last_cycle) != 0 && since_cycle < ${cooldown}) return false;
+              if (id(heartbeats_seen) == 0) {
+                if (${boot_grace} == 0) return false;               // never seen one; don't guess
+                if (now / 1000 < ${boot_grace}) return false;
+              } else {
+                uint32_t silent = (now - id(last_heartbeat)) / 1000;
+                if (silent < ${timeout}) return false;
+              }
+              ESP_LOGW("watchdog", "No heartbeat; cycling HA power");
+              id(last_cycle) = now;
+              id(cycles) += 1;
+              id(cycles_today) += 1;
+              return true;
+          then:
+            - switch.turn_off: ha_power
+            - delay: ${off_time}s
+            - switch.turn_on: ha_power
+            - lambda: 'id(last_heartbeat) = millis();'   // give HA a full timeout to boot
 
 button:
   - platform: template

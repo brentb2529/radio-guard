@@ -26,4 +26,5 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements_test.txt
       - run: ruff check custom_components tests
+      - run: diff -q custom_components/radio_guard/strings.json custom_components/radio_guard/translations/en.json
       - run: pytest -q
