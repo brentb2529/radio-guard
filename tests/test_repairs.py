@@ -413,37 +413,47 @@ async def test_restore_picks_older_file(
     assert fake.restores[0][1]["file"] == older
 
 
-async def test_restore_blocked_preflight_is_shown(
+async def test_restore_blocked_preflight_stops_the_flow(
     hass: HomeAssistant, fake: FakeSource, replaced: str
 ) -> None:
+    """A BLOCKED pre-flight shows the reasons and offers no way to proceed with that file."""
     fake.check = RestoreCheck(ok=False, reasons=["Network key mismatch"], warnings=["w1", "w2"])
     result = await start_fix(hass, REPLACED)
     result = await configure(hass, result["flow_id"], {"file": replaced})
 
-    assert result["step_id"] == "preflight"
-    assert result["errors"] == {"base": "preflight_failed"}
-    assert result["description_placeholders"]["status"] == "BLOCKED: Network key mismatch"
-    assert result["description_placeholders"]["warnings"] == "- w1\n- w2"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "blocked"
+    assert list(result["data_schema"].schema) == []  # no acknowledge box, nothing to tick through
+    ph = result["description_placeholders"]
+    assert ph["reasons"] == "- Network key mismatch"
+    assert ph["warnings"] == "- w1\n- w2"
+    assert ph["file"] == replaced
+    assert ph["source_id"] == "zigbee2mqtt"
 
-    # without the acknowledgement the user stays on the blocked pre-flight
-    result = await configure(hass, result["flow_id"], {"acknowledge": False})
-    assert result["step_id"] == "preflight"
-    assert result["errors"] == {"base": "preflight_failed", "acknowledge": "acknowledge_required"}
+    # Submitting goes back to the backup list, never to confirm.
+    result = await configure(hass, result["flow_id"], {})
+    assert result["step_id"] == "pick"
     assert fake.restores == []
+    assert issue(hass, REPLACED) is not None
 
 
-async def test_restore_blocked_preflight_acknowledged_forces(
+async def test_restore_blocked_then_pick_ok_backup_restores_without_force(
     hass: HomeAssistant, fake: FakeSource, replaced: str
 ) -> None:
-    """What the code does today: acknowledging a BLOCKED pre-flight proceeds with force=True.
-
-    strings.json documents this ("Continuing will force the restore.").
-    """
     fake.check = RestoreCheck(ok=False, reasons=["Network key mismatch"])
-    result = await to_confirm(hass, replaced)
+    result = await start_fix(hass, REPLACED)
+    result = await configure(hass, result["flow_id"], {"file": replaced})
+    assert result["step_id"] == "blocked"
+    result = await configure(hass, result["flow_id"], {})
+    assert result["step_id"] == "pick"
+
+    fake.check = RestoreCheck(ok=True)  # e.g. the user picked a backup that passes
+    result = await configure(hass, result["flow_id"], {"file": replaced})
+    assert result["step_id"] == "preflight"
+    result = await configure(hass, result["flow_id"], {"acknowledge": True})
     result = await configure(hass, result["flow_id"], {"typed": "RESTORE"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert fake.restores[0][1]["allow_ieee_overwrite"] is True
+    assert fake.restores[0][1]["allow_ieee_overwrite"] is False
 
 
 async def test_restore_blocked_by_max_age(
@@ -455,9 +465,9 @@ async def test_restore_blocked_by_max_age(
 
     result = await start_fix(hass, REPLACED)
     result = await configure(hass, result["flow_id"], {"file": name})
-    assert result["errors"] == {"base": "preflight_failed"}
-    assert "10 days old (limit 7)" in result["description_placeholders"]["status"]
-    assert result["description_placeholders"]["backup_age"] == "240"
+    assert result["step_id"] == "blocked"
+    assert "10 days old (limit 7)" in result["description_placeholders"]["reasons"]
+    assert fake.restores == []
 
 
 async def test_restore_preflight_error_aborts(hass: HomeAssistant, fake: FakeSource, replaced: str) -> None:

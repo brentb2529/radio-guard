@@ -34,6 +34,8 @@ Verified on a live HA **2026.2.3** instance in a cloud workspace against a fake 
   backup_running, integration_loaded (disabled by default); button back_up_now.
 - Repairs: `backup_never` / `backup_stale` / `backup_failed` are fixable (confirm → backup).
   `coordinator_replaced` is fixable → guided restore: pick backup → pre-flight → type `RESTORE`.
+  A BLOCKED pre-flight stops the Repairs flow (`blocked` step → back to pick); forcing is only
+  possible via the `restore` service with `force: true` (decided by Brent 2026-11-07).
   Walked end to end against a simulated replaced coordinator.
 - Services: `backup_now`, `list_backups` (response only), `restore` with `mode: dry_run|restore`,
   `force` (advanced). Dry run also raises a persistent notification. Blocked pre-flight →
@@ -128,8 +130,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
 3. **Tests — done (332 passing, no xfails).** Open items they surfaced: real `homeassistant.components.zha`
    can't import in the venv (`aiousbwatcher` missing) so ZHA tests use fake modules; ZHA `restore_backup`
    silently no-ops if the radio's settings `supersedes(backup)`, so `force` may "succeed" without writing
-   (check on hardware); a blocked pre-flight can be forced from the Repairs UI (intended? decide);
-   a failed `pre_restore_*` snapshot leaves a `backup_failed` issue; the first backup's options update
+   (check on hardware); a failed `pre_restore_*` snapshot leaves a `backup_failed` issue; the first backup's options update
    reloads the entry once.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this

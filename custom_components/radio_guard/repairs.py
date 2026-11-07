@@ -106,11 +106,14 @@ class RestoreRepairFlow(RepairsFlow):
                 return self.async_abort(
                     reason="preflight_error", description_placeholders={"error": str(err)}
                 )
+        if not self.check.ok:
+            # A blocked pre-flight never proceeds from the UI. Forcing is a deliberate
+            # service call (radio_guard.restore force: true), not a checkbox.
+            return await self.async_step_blocked()
+        errors: dict[str, str] = {}
         if user_input is not None:
             if user_input.get("acknowledge"):
                 return await self.async_step_confirm()
-        errors: dict[str, str] = {} if self.check.ok else {"base": "preflight_failed"}
-        if user_input is not None:
             errors["acknowledge"] = "acknowledge_required"
         c, b = self.check.current, self.record.meta
         age_h = (dt_util.utcnow() - self.record.created).total_seconds() / 3600
@@ -126,10 +129,32 @@ class RestoreRepairFlow(RepairsFlow):
                 "current_identity": str(
                     c.get("ieee") or c.get("home_id_hex") or c.get("home_id") or "not readable"
                 ),
-                "status": "OK" if self.check.ok else "BLOCKED: " + "; ".join(self.check.reasons),
+                "status": "OK",
                 "warnings": "\n".join(f"- {w}" for w in self.check.warnings) or "- none",
             },
             errors=errors,
+        )
+
+    async def async_step_blocked(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        """Show why the restore is blocked; the only way on is back to the backup list."""
+        if user_input is not None:
+            self.file = None
+            self.record = None
+            self.check = None
+            return await self.async_step_pick()
+        st = self.coord.states[self.sid]
+        return self.async_show_form(
+            step_id="blocked",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "source": st.source.name,
+                "source_id": self.sid,
+                "file": self.record.name,
+                "reasons": "\n".join(f"- {r}" for r in self.check.reasons) or "- unknown",
+                "warnings": "\n".join(f"- {w}" for w in self.check.warnings) or "- none",
+            },
         )
 
     async def async_step_confirm(
@@ -145,8 +170,10 @@ class RestoreRepairFlow(RepairsFlow):
                     errors={"typed": "type_restore"},
                     description_placeholders={"source": st.source.name},
                 )
+            if self.check is None or not self.check.ok:  # never force from the UI
+                return await self.async_step_blocked()
             try:
-                await self.coord.async_restore(self.sid, self.file, force=not self.check.ok)
+                await self.coord.async_restore(self.sid, self.file, force=False)
             except RestoreStaged as staged:
                 return self.async_abort(
                     reason="restore_staged",

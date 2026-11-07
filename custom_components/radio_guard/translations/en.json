@@ -196,6 +196,10 @@
             "description": "**Backup** `{file}`\nNetwork {backup_identity}, {backup_devices} devices, {backup_age} h old\n\n**Attached coordinator** {current_identity}\n\n**Status:** {status}\n\n**Before you continue**\n{warnings}",
             "data": { "acknowledge": "The old coordinator is unplugged for good and I have read the above" }
           },
+          "blocked": {
+            "title": "Restore blocked",
+            "description": "The pre-flight check refused `{file}` for {source}:\n{reasons}\n\nAlso noted:\n{warnings}\n\nNothing was changed. Submit to pick a different backup, or close this dialog. If you are certain the check is wrong, a restore can be forced only from **Developer tools > Actions** with `radio_guard.restore`, `source: {source_id}`, `mode: restore`, `force: true`."
+          },
           "confirm": {
             "title": "Type RESTORE to continue",
             "description": "This overwrites the attached {source} coordinator. It cannot be undone from here.",
@@ -203,7 +207,6 @@
           }
         },
         "error": {
-          "preflight_failed": "Pre-flight found a blocking problem. Continuing will force the restore.",
           "acknowledge_required": "Tick the box to confirm the old coordinator is unplugged.",
           "type_restore": "Type RESTORE in capitals."
         },

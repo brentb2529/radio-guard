@@ -75,7 +75,7 @@ No standby nodes, no clusters. Worst case is ten minutes with a screwdriver, and
 | Service | Description |
 |---|---|
 | `radio_guard.backup_now` | Back up one source (`source:`) or all. Returns file info. |
-| `radio_guard.restore` | Dry run by default. `confirm: true` to restore. `force: true` to override a failed pre-flight. |
+| `radio_guard.restore` | Dry run by default. `mode: restore` to restore. `force: true` overrides a blocked pre-flight (the only way to force; the Repairs flow never does). |
 
 ## Entities (per source)
 
