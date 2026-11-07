@@ -4,7 +4,7 @@ blueprint:
     Sends a notification when a Radio Guard "Backup stale" sensor has been on for
     a while. Pick the problem sensor for each coordinator you protect.
   domain: automation
-  source_url: https://github.com/bbensten/radio-guard/blob/main/blueprints/automation/radio_guard/backup_problem_notify.yaml
+  source_url: https://github.com/brentb2529/radio-guard/blob/main/blueprints/automation/radio_guard/backup_problem_notify.yaml
   input:
     stale_sensors:
       name: Backup stale sensors

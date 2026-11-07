@@ -2,13 +2,13 @@
   "domain": "radio_guard",
   "name": "Radio Guard",
   "after_dependencies": ["hassio", "mqtt", "zha", "zwave_js"],
-  "codeowners": ["@bbensten"],
+  "codeowners": ["@brentb2529"],
   "config_flow": true,
   "dependencies": ["repairs"],
-  "documentation": "https://github.com/bbensten/radio-guard",
+  "documentation": "https://github.com/brentb2529/radio-guard",
   "integration_type": "hub",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/bbensten/radio-guard/issues",
+  "issue_tracker": "https://github.com/brentb2529/radio-guard/issues",
   "requirements": [],
   "version": "0.1.0"
 }

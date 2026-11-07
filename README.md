@@ -12,7 +12,7 @@ Home Assistant backs up its own config nightly. It does not back up the one thin
 
 ## Install
 
-1. HACS → Integrations → ⋮ → Custom repositories → add `https://github.com/bbensten/radio-guard` as *Integration*.
+1. HACS → Integrations → ⋮ → Custom repositories → add `https://github.com/brentb2529/radio-guard` as *Integration*.
 2. Install **Radio Guard**, restart Home Assistant.
 3. Settings → Devices & services → Add integration → **Radio Guard**. It detects which of MQTT (for Zigbee2MQTT), ZHA and Z-Wave JS are loaded and pre-selects them.
 

@@ -5,7 +5,7 @@ ZHA) and Z-Wave JS coordinators, stores them under `/config/radio_guard/`, and r
 onto replacement hardware with a guided Repairs flow. Plus an MQTT heartbeat for an external
 power watchdog (ESPHome and Shelly references in `esphome/`, `shelly/`).
 
-Owner: Brent (@bbensten). Product goals, in order: easy onboarding via HACS, easy to start
+Owner: Brent (@brentb2529). Product goals, in order: easy onboarding via HACS, easy to start
 backups, easy to use on failure day. Rock-solid over feature-rich. HA minimum **2025.8**.
 
 ## Hard rules
@@ -114,7 +114,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
 
 ## TODO, in order
 
-1. **Push to GitHub** `bbensten/radio-guard` (public, no README init), fix `codeowners`/URLs if the
+1. **Push to GitHub** `brentb2529/radio-guard` (public, no README init), fix `codeowners`/URLs if the
    name differs. Tag `v0.1.0` after first dev-instance validation; manifest `version` must match.
 2. **Deploy to dev 192.168.1.196** via HACS custom repository (or copy `custom_components/radio_guard`
    into its `/config/custom_components/`), restart, add the integration, confirm first backup,
