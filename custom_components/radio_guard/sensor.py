@@ -36,9 +36,7 @@ async def async_setup_entry(
 
 
 class LastBackupSensor(RadioGuardEntity, SensorEntity):
-    entity_description = SensorEntityDescription(
-        key="last_backup", device_class=SensorDeviceClass.TIMESTAMP
-    )
+    entity_description = SensorEntityDescription(key="last_backup", device_class=SensorDeviceClass.TIMESTAMP)
 
     def __init__(self, coord, sid) -> None:
         super().__init__(coord, sid, "last_backup")
@@ -53,7 +51,11 @@ class LastBackupSensor(RadioGuardEntity, SensorEntity):
         rec = self.state_obj.latest
         if not rec:
             return {}
-        return {"file": str(rec.path), "size": rec.size, **{k: v for k, v in rec.meta.items() if k != "members"}}
+        return {
+            "file": str(rec.path),
+            "size": rec.size,
+            **{k: v for k, v in rec.meta.items() if k != "members"},
+        }
 
 
 class BackupAgeSensor(RadioGuardEntity, SensorEntity):
@@ -116,4 +118,4 @@ class LastErrorSensor(RadioGuardEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         err = self.state_obj.last_error
-        return (err[:250] if err else "none")
+        return err[:250] if err else "none"

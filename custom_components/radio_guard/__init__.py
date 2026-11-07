@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
@@ -125,10 +124,16 @@ def _register_services(hass: HomeAssistant) -> None:
         return {"dry_run": False, "restored": record.as_dict()}
 
     hass.services.async_register(
-        DOMAIN, SERVICE_BACKUP_NOW, _backup_now, schema=BACKUP_SCHEMA,
+        DOMAIN,
+        SERVICE_BACKUP_NOW,
+        _backup_now,
+        schema=BACKUP_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
-        DOMAIN, SERVICE_RESTORE, _restore, schema=RESTORE_SCHEMA,
+        DOMAIN,
+        SERVICE_RESTORE,
+        _restore,
+        schema=RESTORE_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )

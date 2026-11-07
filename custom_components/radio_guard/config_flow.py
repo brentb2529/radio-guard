@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
@@ -54,14 +53,9 @@ def _schema(hass: HomeAssistant, current: dict[str, Any]) -> vol.Schema:
     detected = _detect_sources(hass)
     return vol.Schema(
         {
-            vol.Required(
-                CONF_SOURCES, default=current.get(CONF_SOURCES, detected)
-            ): selector.SelectSelector(
+            vol.Required(CONF_SOURCES, default=current.get(CONF_SOURCES, detected)): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value=s, label=SOURCE_NAMES[s])
-                        for s in ALL_SOURCES
-                    ],
+                    options=[selector.SelectOptionDict(value=s, label=SOURCE_NAMES[s]) for s in ALL_SOURCES],
                     multiple=True,
                     mode=selector.SelectSelectorMode.LIST,
                 )
@@ -90,9 +84,7 @@ def _schema(hass: HomeAssistant, current: dict[str, Any]) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=1, max=720, mode=selector.NumberSelectorMode.BOX)
             ),
-            vol.Optional(
-                CONF_BACKUP_DIR, default=current.get(CONF_BACKUP_DIR, DEFAULT_BACKUP_DIR)
-            ): str,
+            vol.Optional(CONF_BACKUP_DIR, default=current.get(CONF_BACKUP_DIR, DEFAULT_BACKUP_DIR)): str,
             vol.Optional(
                 CONF_HEARTBEAT_ENABLED,
                 default=current.get(CONF_HEARTBEAT_ENABLED, DEFAULT_HEARTBEAT_ENABLED),
@@ -113,7 +105,13 @@ def _schema(hass: HomeAssistant, current: dict[str, Any]) -> vol.Schema:
 
 def _coerce(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data)
-    for key in (CONF_BACKUP_HOUR, CONF_BACKUP_MINUTE, CONF_RETENTION, CONF_STALE_HOURS, CONF_HEARTBEAT_INTERVAL):
+    for key in (
+        CONF_BACKUP_HOUR,
+        CONF_BACKUP_MINUTE,
+        CONF_RETENTION,
+        CONF_STALE_HOURS,
+        CONF_HEARTBEAT_INTERVAL,
+    ):
         if key in out:
             out[key] = int(out[key])
     out[CONF_BACKUP_DIR] = str(out.get(CONF_BACKUP_DIR, DEFAULT_BACKUP_DIR)).strip("/ ") or DEFAULT_BACKUP_DIR
@@ -157,6 +155,4 @@ class RadioGuardOptionsFlow(OptionsFlow):
             else:
                 return self.async_create_entry(title="", data=_coerce(user_input))
         current = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(
-            step_id="init", data_schema=_schema(self.hass, current), errors=errors
-        )
+        return self.async_show_form(step_id="init", data_schema=_schema(self.hass, current), errors=errors)

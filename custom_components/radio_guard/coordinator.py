@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import json
 import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -21,8 +20,8 @@ from .backup import (
     BackupSource,
     RestoreCheck,
     SourceUnavailable,
-    Zigbee2MQTTSource,
     ZHASource,
+    Zigbee2MQTTSource,
     ZWaveJSSource,
 )
 from .const import (
@@ -257,7 +256,10 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
             raise RuntimeError("Restore pre-flight failed: " + "; ".join(check.reasons))
         data = await self.hass.async_add_executor_job(st.store.read, record)
         _LOGGER.warning(
-            "Restoring %s from %s. Warnings: %s", st.source.name, record.name, "; ".join(check.warnings) or "none"
+            "Restoring %s from %s. Warnings: %s",
+            st.source.name,
+            record.name,
+            "; ".join(check.warnings) or "none",
         )
         await st.source.async_restore(data, record.meta)
         self.hass.bus.async_fire(EVENT_RESTORE_COMPLETE, {"source": sid, "file": str(record.path)})

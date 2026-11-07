@@ -24,9 +24,9 @@ import base64
 import io
 import json
 import logging
+import zipfile
 from pathlib import Path
 from typing import Any
-import zipfile
 
 from homeassistant.core import HomeAssistant, callback
 
@@ -171,24 +171,26 @@ class Zigbee2MQTTSource(BackupSource):
                 return p
         return None
 
-    async def _addon_slug(self) -> str | None:
-        """Return the running Z2M add-on slug, if Supervisor is present."""
+    async def _addon_manager(self):
+        """Return an AddonManager for the installed Z2M add-on, if Supervisor is present."""
         try:
-            from homeassistant.components.hassio import (  # noqa: PLC0415
-                async_get_addon_info,
-                is_hassio,
+            from homeassistant.components.hassio.addon_manager import (  # noqa: PLC0415
+                AddonManager,
+                AddonState,
             )
+            from homeassistant.helpers.hassio import is_hassio  # noqa: PLC0415
         except ImportError:
             return None
         if not is_hassio(self.hass):
             return None
         for slug in (Z2M_ADDON_SLUG, Z2M_ADDON_SLUG_EDGE):
+            mgr = AddonManager(self.hass, _LOGGER, "Zigbee2MQTT", slug)
             try:
-                info = await async_get_addon_info(self.hass, slug)
+                info = await mgr.async_get_addon_info()
             except Exception:  # noqa: BLE001
                 continue
-            if info:
-                return slug
+            if info.state is not AddonState.NOT_INSTALLED:
+                return mgr
         return None
 
     async def async_restore_check(self, data: bytes, meta: dict[str, Any]) -> RestoreCheck:
@@ -204,13 +206,12 @@ class Zigbee2MQTTSource(BackupSource):
             check.reasons.append("Backup zip does not contain coordinator_backup.json")
 
         data_dir = await self.hass.async_add_executor_job(self._find_data_dir)
-        slug = await self._addon_slug()
-        if slug and data_dir:
-            check.warnings.append(f"Will stop add-on {slug}, write {data_dir}, then start it")
+        mgr = await self._addon_manager()
+        if mgr and data_dir:
+            check.warnings.append(f"Will stop add-on {mgr.addon_slug}, write {data_dir}, then start it")
         elif data_dir:
             check.warnings.append(
-                f"Z2M data dir found at {data_dir} but no Supervisor add-on; "
-                "you must stop/start Z2M yourself"
+                f"Z2M data dir found at {data_dir} but no Supervisor add-on; you must stop/start Z2M yourself"
             )
         else:
             check.warnings.append(
@@ -221,28 +222,22 @@ class Zigbee2MQTTSource(BackupSource):
         bak_ieee = zip_meta.get("ieee")
         if cur_ieee and bak_ieee and cur_ieee.lower() == bak_ieee.lower():
             check.warnings.append(
-                "Live coordinator already has the backup's IEEE address; "
-                "restore is probably unnecessary"
+                "Live coordinator already has the backup's IEEE address; restore is probably unnecessary"
             )
         return check
 
     async def async_restore(self, data: bytes, meta: dict[str, Any]) -> None:
-        slug = await self._addon_slug()
+        mgr = await self._addon_manager()
         data_dir = await self.hass.async_add_executor_job(self._find_data_dir)
 
-        if slug and data_dir:
-            from homeassistant.components.hassio import (  # noqa: PLC0415
-                async_start_addon,
-                async_stop_addon,
-            )
-
-            _LOGGER.info("Stopping Z2M add-on %s for restore", slug)
-            await async_stop_addon(self.hass, slug)
+        if mgr and data_dir:
+            _LOGGER.info("Stopping Z2M add-on %s for restore", mgr.addon_slug)
+            await mgr.async_stop_addon()
             try:
                 await self.hass.async_add_executor_job(self._write_restore_files, data, data_dir)
             finally:
-                _LOGGER.info("Starting Z2M add-on %s", slug)
-                await async_start_addon(self.hass, slug)
+                _LOGGER.info("Starting Z2M add-on %s", mgr.addon_slug)
+                await mgr.async_start_addon()
             return
 
         staging = Path(self.hass.config.path("radio_guard", "zigbee2mqtt", "restore"))

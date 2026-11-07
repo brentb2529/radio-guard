@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from contextlib import suppress
 import logging
+from contextlib import suppress
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState

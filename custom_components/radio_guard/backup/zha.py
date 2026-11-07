@@ -66,9 +66,7 @@ class ZHASource(BackupSource):
 
     async def async_backup(self) -> BackupPayload:
         app = self._app()
-        backup = await asyncio.wait_for(
-            app.backups.create_backup(load_devices=True), ZHA_BACKUP_TIMEOUT
-        )
+        backup = await asyncio.wait_for(app.backups.create_backup(load_devices=True), ZHA_BACKUP_TIMEOUT)
         as_dict = backup.as_dict()
         data = json.dumps(as_dict, indent=2, sort_keys=True).encode()
         meta = {

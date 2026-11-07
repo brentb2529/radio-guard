@@ -19,11 +19,11 @@ backups automatically. All filesystem work runs in the executor.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 import json
 import logging
 import os
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +65,7 @@ class BackupStore:
 
     def write(self, data: bytes, ext: str, meta: dict[str, Any]) -> BackupRecord:
         self.root.mkdir(parents=True, exist_ok=True)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stem = now.strftime("%Y%m%dT%H%M%SZ")
         path = self.root / f"{stem}{ext}"
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -126,7 +126,7 @@ class BackupStore:
                 except ValueError:
                     created = None
             if created is None:
-                created = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                created = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             records.append(BackupRecord(self.source, path, created, path.stat().st_size, meta))
         records.sort(key=lambda r: r.created, reverse=True)
         return records
