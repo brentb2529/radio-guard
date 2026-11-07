@@ -29,7 +29,7 @@ from .const import (
     SERVICE_LIST_BACKUPS,
     SERVICE_RESTORE,
 )
-from .coordinator import RadioGuardCoordinator, device_count_of
+from .coordinator import RadioGuardCoordinator, RestoreBlocked, device_count_of
 from .storage import BackupRecord
 
 _LOGGER = logging.getLogger(__name__)
@@ -222,6 +222,12 @@ def _register_services(hass: HomeAssistant) -> None:
                 translation_key="no_backup",
                 translation_placeholders={"source": name, "file": file or "latest"},
             ) from err
+        except RestoreBlocked as blocked:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="restore_blocked",
+                translation_placeholders={"source": name, "reasons": str(blocked)},
+            ) from blocked
         except RestoreStaged as staged:
             persistent_notification.async_create(
                 hass,

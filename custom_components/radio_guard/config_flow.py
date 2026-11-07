@@ -271,7 +271,8 @@ class RadioGuardOptionsFlow(OptionsFlow):
             if not flat.get(CONF_SOURCES):
                 errors[CONF_SOURCES] = "no_sources"
             else:
-                return self.async_create_entry(title="", data=flat)
+                internal = {k: v for k, v in self.config_entry.options.items() if k.startswith("_")}
+                return self.async_create_entry(title="", data={**internal, **flat})
         current = {**self.config_entry.data, **self.config_entry.options}
         return self.async_show_form(
             step_id="init",

@@ -136,7 +136,8 @@
     "source_not_enabled": { "message": "{source} is not enabled in Radio Guard. Add it under Configure." },
     "backup_failed": { "message": "{source} backup failed: {error}" },
     "restore_failed": { "message": "{source} restore failed: {error}" },
-    "no_backup": { "message": "No {source} backup matching {file}." }
+    "no_backup": { "message": "No {source} backup matching {file}." },
+    "restore_blocked": { "message": "{source} restore blocked by pre-flight: {reasons} Run a dry run for details, or set force to override." }
   },
   "issues": {
     "backup_failed": {

@@ -101,6 +101,19 @@ def device_count_of(meta: dict[str, Any]) -> int | None:
 
 
 @dataclass
+class CoordinatorReplaced(Exception):
+    """Scheduled backup skipped because the live coordinator differs from the last backup."""
+
+
+class RestoreBlocked(Exception):
+    """Pre-flight found blocking problems and force was not set."""
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__("; ".join(reasons))
+        self.reasons = reasons
+
+
+@dataclass
 class SourceState:
     """What we know about one source."""
 
@@ -281,7 +294,7 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         for sid, st in self.states.items():
             st.available = st.source.available()
             st.records = await self.hass.async_add_executor_job(st.store.list)
-            st.latest = st.records[0] if st.records else None
+            st.latest = next((r for r in st.records if not r.meta.get("label")), None)
             if st.available:
                 try:
                     st.identity = await st.source.async_identity()
@@ -338,11 +351,25 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
     # ------------------------------------------------------------ backup
 
     async def _scheduled_backup(self, _now: datetime) -> None:
-        await self.async_backup_all()
+        await self.async_backup_all(scheduled=True)
 
-    async def async_backup_all(self) -> dict[str, BackupRecord | Exception]:
+    async def async_backup_all(self, *, scheduled: bool = False) -> dict[str, BackupRecord | Exception]:
+        """Back up every source. Scheduled runs skip a source whose coordinator changed.
+
+        Otherwise the nightly backup of a freshly plugged-in replacement stick would
+        become "latest" and silently hide the backup the user actually needs.
+        """
         results: dict[str, BackupRecord | Exception] = {}
-        for sid in list(self.states):
+        for sid, st in list(self.states.items()):
+            if scheduled and st.coordinator_replaced:
+                _LOGGER.warning(
+                    "%s: coordinator identity changed since the last backup; skipping the scheduled backup "
+                    "so the previous network backup stays current. Restore it, or press Back up now to accept "
+                    "the new coordinator.",
+                    st.source.name,
+                )
+                results[sid] = CoordinatorReplaced(st.source.name)
+                continue
             try:
                 results[sid] = await self.async_backup(sid)
             except Exception as err:  # noqa: BLE001
@@ -369,7 +396,8 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
                 st.store.write, payload.data, payload.ext, payload.meta, label
             )
             st.records = await self.hass.async_add_executor_job(st.store.list)
-            st.latest = st.records[0] if st.records else record
+            if not label:
+                st.latest = record
             st.last_error = None
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
             self.hass.bus.async_fire(
@@ -443,7 +471,7 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         try:
             record, check = await self.async_restore_check(sid, file)
             if not check.ok and not force:
-                raise RuntimeError("Restore pre-flight failed: " + "; ".join(check.reasons))
+                raise RestoreBlocked(check.reasons)
             # Snapshot the target first if it has a network of its own.
             target_n = device_count_of(st.identity)
             if st.available and (target_n is None or target_n > 1):

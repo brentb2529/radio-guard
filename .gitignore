@@ -5,3 +5,7 @@ __pycache__/
 .ruff_cache/
 config/
 .coverage
+smoke/config/
+smoke/*.log
+smoke/token.txt
+nohup.out

@@ -138,9 +138,12 @@ class BackupStore:
         records.sort(key=lambda r: r.created, reverse=True)
         return records
 
-    def latest(self) -> BackupRecord | None:
-        records = self.list()
-        return records[0] if records else None
+    def latest(self, *, include_labelled: bool = False) -> BackupRecord | None:
+        """Newest regular backup; labelled snapshots (pre_restore_*) only if asked."""
+        for rec in self.list():
+            if include_labelled or not rec.meta.get("label"):
+                return rec
+        return None
 
     def resolve(self, name_or_path: str | None) -> BackupRecord | None:
         """Find a backup by bare filename, absolute path, or None for latest."""
