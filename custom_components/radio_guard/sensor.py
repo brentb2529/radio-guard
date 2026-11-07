@@ -47,10 +47,11 @@ class LastBackupSensor(RadioGuardEntity, SensorEntity):
         if not rec:
             return {}
         skip = {"members", "security_keys"}
+        # Sidecar meta carries "file" as the bare name; the attribute is the full path.
         return {
+            **{k: v for k, v in rec.meta.items() if k not in skip},
             "file": str(rec.path),
             "size": rec.size,
-            **{k: v for k, v in rec.meta.items() if k not in skip},
         }
 
 

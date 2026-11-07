@@ -100,7 +100,6 @@ def device_count_of(meta: dict[str, Any]) -> int | None:
     return None
 
 
-@dataclass
 class CoordinatorReplaced(Exception):
     """Scheduled backup skipped because the live coordinator differs from the last backup."""
 
