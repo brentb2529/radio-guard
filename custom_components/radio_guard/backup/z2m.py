@@ -232,8 +232,14 @@ class Zigbee2MQTTSource(BackupSource):
             "z2m_version": info.get("version"),
             "zigbee_herdsman": herdsman.get("version") if isinstance(herdsman, dict) else herdsman,
             "bridge_state": self._state,
-            "device_count": len(info.get("devices") or []) if info.get("devices") else None,
+            "device_count": self._device_count(info),
         }
+
+    def _device_count(self, info: dict[str, Any]) -> int | None:
+        """Paired devices from the retained bridge/devices list (bridge/info does not carry one)."""
+        if self._devices:
+            return sum(1 for d in self._devices if d.get("type") != "Coordinator")
+        return len(info.get("devices") or []) if info.get("devices") else None
 
     # ------------------------------------------------------------ backup
 

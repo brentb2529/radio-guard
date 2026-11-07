@@ -36,6 +36,7 @@ MODE_MIGRATE = "migrate"
 STOP_TIMEOUT = 120
 START_TIMEOUT = 180
 DEVICE_TIMEOUT = 90
+MIN_PROGRESS_SECONDS = 1.5
 # Pre-flight lines that only make sense for a live coordinator or the old staged path.
 _PREFLIGHT_NOISE = (
     "Could not read live coordinator identity",
@@ -45,6 +46,17 @@ _PREFLIGHT_NOISE = (
     "Unplug the old coordinator for good",
     "Live coordinator already has this backup",
 )
+
+
+async def _at_least(coro, seconds: float):
+    """Run ``coro`` but take at least ``seconds``.
+
+    The frontend subscribes to "flow progressed" only after it has rendered the progress
+    screen. A task that finishes before that (a fast backup, Z2M already offline) fires its
+    one notification into the void and the dialog spins forever. Seen on the dev instance.
+    """
+    result, _ = await asyncio.gather(coro, asyncio.sleep(seconds))
+    return result
 
 
 def _coordinator(hass) -> RadioGuardCoordinator:
@@ -111,7 +123,9 @@ class ReplaceWizardMixin:
         (and then drop) a fresh coroutine every time.
         """
         if self._task is None:
-            self._task = self.hass.async_create_task(job(), f"{DOMAIN}_{action}")
+            self._task = self.hass.async_create_task(
+                _at_least(job(), MIN_PROGRESS_SECONDS), f"{DOMAIN}_{action}"
+            )
         if not self._task.done():
             return self.async_show_progress(
                 step_id=step_id,

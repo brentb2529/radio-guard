@@ -118,20 +118,21 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
 
 1. **Push to GitHub** `brentb2529/radio-guard` (public, no README init), fix `codeowners`/URLs if the
    name differs. Tag `v0.1.0` after first dev-instance validation; manifest `version` must match.
-2. **Dev instance (192.168.1.196, Mac mini) — done for Z2M (2026-11-07).** The dev HA is the Docker Core
-   container `bensten-dev-ha` (HA 2026.10.2, no Supervisor, colima, no USB) with config in
-   `../dev-ha/config`; it has **no real radios** (prod devices are `prod_mirror` fakes). Radio Guard is
-   bind-mounted from this repo (`../dev-ha/docker-compose.yml` + symlink in `config/custom_components/`),
-   MQTT entry -> `host.docker.internal:1883` = `smoke/broker.yaml` amqtt on the Mac's 127.0.0.1, fed by
-   `smoke/fake_z2m.py`. Neither process survives a reboot; restart both from `smoke/`. Verified there:
-   first backup + notification, entities, Repairs (replaced stick via FAKE_IEEE/FAKE_EPID -> guided flow to
-   the RESTORE step, aborted), `restore` dry run BLOCKED (same stick) / OK (replaced). Still open: ZHA and
-   Z-Wave JS on real network adapters, Z2M add-on path (needs a Supervisor install), a real restore.
-3. **Tests — done (332 passing, no xfails).** Open items they surfaced: real `homeassistant.components.zha`
-   can't import in the venv (`aiousbwatcher` missing) so ZHA tests use fake modules; ZHA `restore_backup`
-   silently no-ops if the radio's settings `supersedes(backup)`, so `force` may "succeed" without writing
-   (check on hardware); a failed `pre_restore_*` snapshot leaves a `backup_failed` issue; the first backup's options update
-   reloads the entry once.
+2. **Dev instance (192.168.1.196, Mac mini).** Docker Core container `bensten-dev-ha` (HA 2026.10.2, no
+   Supervisor, no USB), config `../dev-ha/config`, **no real radios** (prod devices are `prod_mirror` fakes;
+   prod itself runs **Z-Wave JS** with 2 nodes, no ZHA/Z2M; Zigbee there is on SmartThings). Radio Guard is
+   bind-mounted from this repo. MQTT -> `host.docker.internal:1883` = `smoke/broker.yaml` amqtt on the Mac.
+   Simulated Z2M: `smoke/z2m.sh start ../dev-ha/config/zigbee2mqtt | stop | status` (ONE instance, pidfile;
+   `pkill -f "python fake_z2m.py"` does NOT match on macOS). Stick = `serial.port tcp://<stick>:6638`.
+   **UI-verified 2026-11-07 (clean run, one Z2M):** failure detection after HA start + 5 min grace, Repair ->
+   replace wizard (Docker path) -> devices 2/2 + 1/1; Configure -> Move to a new coordinator -> devices 2/2 +
+   1/1 -> Go back to the old coordinator. amqtt quirks: no LWT on crash, resends all retained on subscribe.
+   **Not yet verified:** Z2M add-on path (needs Supervisor: plan = HA OS VM on this Mac via QEMU, localhost),
+   real hardware. **Wizard not built yet for ZHA and Z-Wave JS** (they still use the old pick/preflight/RESTORE
+   flow). Next: Z-Wave JS wizard (prod uses it; test with zwave-js-server `--mock-driver`), then ZHA.
+3. **Tests: 418 passing.** Known gaps: ZHA tests use fake modules (`aiousbwatcher` missing); ZHA
+   `restore_backup` no-ops if settings supersede the backup (check on hardware); failed `pre_restore_*`
+   snapshot leaves a `backup_failed` issue.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
    does NOT do", FAQ, screenshots under `docs/img/`.

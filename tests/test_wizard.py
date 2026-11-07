@@ -69,6 +69,12 @@ STRINGS = Path(__file__).parent.parent / "custom_components" / "radio_guard" / "
 WIZARD_PY = Path(__file__).parent.parent / "custom_components" / "radio_guard" / "wizard.py"
 
 
+@pytest.fixture(autouse=True)
+def _no_min_progress(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real wizard keeps progress screens up >= 1.5 s for the frontend; tests freeze time."""
+    monkeypatch.setattr("custom_components.radio_guard.wizard.MIN_PROGRESS_SECONDS", 0)
+
+
 # ----------------------------------------------------------------- fake source
 
 
@@ -1273,3 +1279,17 @@ def test_flow_specific_strings() -> None:
     assert "title" in down
     assert {"wiz_pick", "wait"} <= set(down["fix_flow"]["step"]["init"]["menu_options"])
     assert "keep_waiting" in down["fix_flow"]["abort"]
+
+
+async def test_progress_tasks_take_a_minimum_time() -> None:
+    """A task that finishes before the frontend subscribes would leave the dialog spinning forever."""
+    import time
+
+    from custom_components.radio_guard.wizard import _at_least
+
+    async def fast() -> str:
+        return "done"
+
+    t0 = time.monotonic()
+    assert await _at_least(fast(), 0.05) == "done"
+    assert time.monotonic() - t0 >= 0.05
