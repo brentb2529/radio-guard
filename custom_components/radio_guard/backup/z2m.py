@@ -391,6 +391,11 @@ class Zigbee2MQTTSource(BackupSource):
                         self._write_restore_files, data, data_dir, ocbf, True
                     )
                 finally:
+                    # Forget pre-restore state *before* starting, so a fast Z2M whose
+                    # bridge/info lands while start is still awaiting is not discarded.
+                    self._online_event.clear()
+                    self._info_event.clear()
+                    self._info = {}
                     _LOGGER.info("Starting Z2M add-on %s", mgr.addon_slug)
                     await mgr.async_start_addon()
                 await self._verify_after_start(ocbf)
@@ -417,8 +422,6 @@ class Zigbee2MQTTSource(BackupSource):
                 "Zigbee2MQTT did not report online within 2 minutes after restart. Check the add-on log; "
                 "if it says \"Started with result 'reset'\" the restore did not apply (see README)."
             ) from err
-        self._info_event.clear()
-        self._info = {}
         with_timeout = 30
         try:
             await asyncio.wait_for(self._info_event.wait(), with_timeout)

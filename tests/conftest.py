@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 import yaml
+from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.radio_guard.const import (
@@ -30,7 +31,6 @@ from custom_components.radio_guard.const import (
     SOURCE_ZHA,
     SOURCE_ZWAVE,
 )
-from homeassistant.core import HomeAssistant
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
