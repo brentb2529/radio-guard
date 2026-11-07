@@ -485,7 +485,6 @@
     },
     "coordinator_down": {
       "title": "{source} coordinator is not responding",
-      "description": "{source} has been offline since {since}. If its coordinator has failed, Radio Guard can put your network on a new one from your backup, without re-pairing anything.",
       "fix_flow": {
         "step": {
           "init": {

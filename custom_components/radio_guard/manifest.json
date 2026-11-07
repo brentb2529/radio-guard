@@ -1,10 +1,20 @@
 {
   "domain": "radio_guard",
   "name": "Radio Guard",
-  "after_dependencies": ["hassio", "mqtt", "zha", "zwave_js"],
-  "codeowners": ["@brentb2529"],
+  "after_dependencies": [
+    "hassio",
+    "mqtt",
+    "usb",
+    "zha",
+    "zwave_js"
+  ],
+  "codeowners": [
+    "@brentb2529"
+  ],
   "config_flow": true,
-  "dependencies": ["repairs"],
+  "dependencies": [
+    "repairs"
+  ],
   "documentation": "https://github.com/brentb2529/radio-guard",
   "integration_type": "hub",
   "iot_class": "calculated",
