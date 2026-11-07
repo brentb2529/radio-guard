@@ -107,9 +107,11 @@ class RestoreRepairFlow(RepairsFlow):
                     reason="preflight_error", description_placeholders={"error": str(err)}
                 )
         if user_input is not None:
-            if not user_input.get("acknowledge"):
-                return await self.async_step_preflight()
-            return await self.async_step_confirm()
+            if user_input.get("acknowledge"):
+                return await self.async_step_confirm()
+        errors: dict[str, str] = {} if self.check.ok else {"base": "preflight_failed"}
+        if user_input is not None:
+            errors["acknowledge"] = "acknowledge_required"
         c, b = self.check.current, self.record.meta
         age_h = (dt_util.utcnow() - self.record.created).total_seconds() / 3600
         return self.async_show_form(
@@ -127,7 +129,7 @@ class RestoreRepairFlow(RepairsFlow):
                 "status": "OK" if self.check.ok else "BLOCKED: " + "; ".join(self.check.reasons),
                 "warnings": "\n".join(f"- {w}" for w in self.check.warnings) or "- none",
             },
-            errors={} if self.check.ok else {"base": "preflight_failed"},
+            errors=errors,
         )
 
     async def async_step_confirm(

@@ -61,17 +61,21 @@ def test_write_creates_file_and_sidecar(store: BackupStore, root: Path, freezer)
 
 
 def test_write_tmp_file_atomicity(store: BackupStore, root: Path, freezer) -> None:
-    """Data goes to <name>.tmp first, is fsynced, then os.replace'd into place."""
+    """Data and sidecar each go to <name>.tmp first, are fsynced, then os.replace'd into place."""
     freezer.move_to("2026-11-07 03:17:00+00:00")
-    seen: dict[str, object] = {}
+    seen: list[dict[str, object]] = []
 
     real_replace = os.replace
 
     def spy_replace(src, dst, *a, **kw):
-        seen["src"] = Path(src)
-        seen["dst"] = Path(dst)
-        seen["src_exists_before"] = Path(src).exists()
-        seen["dst_exists_before"] = Path(dst).exists()
+        seen.append(
+            {
+                "src": Path(src),
+                "dst": Path(dst),
+                "src_exists_before": Path(src).exists(),
+                "dst_exists_before": Path(dst).exists(),
+            }
+        )
         return real_replace(src, dst, *a, **kw)
 
     with (
@@ -80,12 +84,33 @@ def test_write_tmp_file_atomicity(store: BackupStore, root: Path, freezer) -> No
     ):
         rec = store.write(b"xyz", ".nvm", {})
 
-    assert seen["src"] == root / "zha" / "20261107T031700Z.nvm.tmp"
-    assert seen["dst"] == rec.path
-    assert seen["src_exists_before"] is True
-    assert seen["dst_exists_before"] is False
-    fsync.assert_called_once()
-    assert not seen["src"].exists()
+    data, meta = seen
+    assert data["src"] == root / "zha" / "20261107T031700Z.nvm.tmp"
+    assert data["dst"] == rec.path
+    assert meta["src"] == root / "zha" / f"20261107T031700Z{META_SUFFIX}.tmp"
+    assert meta["dst"] == root / "zha" / f"20261107T031700Z{META_SUFFIX}"
+    for call in seen:
+        assert call["src_exists_before"] is True
+        assert call["dst_exists_before"] is False
+        assert not call["src"].exists()
+    assert fsync.call_count == 2
+
+
+def test_write_sidecar_is_private(store: BackupStore, root: Path) -> None:
+    """The sidecar may carry Z-Wave security keys, so it must be 0600 like the data file."""
+    rec = store.write(b"nvm", ".nvm", {"security_keys": {"S2_AccessControl": "00" * 16}})
+    assert rec.path.stat().st_mode & 0o777 == 0o600
+    meta_path = store._meta_path_for(rec.path)
+    assert meta_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_write_failure_removes_tmp(store: BackupStore, root: Path) -> None:
+    with (
+        patch("custom_components.radio_guard.storage.os.fsync", side_effect=OSError("disk full")),
+        pytest.raises(OSError, match="disk full"),
+    ):
+        store.write(b"xyz", ".nvm", {})
+    assert list((root / "zha").glob("*")) == []
 
 
 def test_write_failure_leaves_no_final_file(store: BackupStore, root: Path, freezer) -> None:

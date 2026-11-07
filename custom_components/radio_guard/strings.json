@@ -204,6 +204,7 @@
         },
         "error": {
           "preflight_failed": "Pre-flight found a blocking problem. Continuing will force the restore.",
+          "acknowledge_required": "Tick the box to confirm the old coordinator is unplugged.",
           "type_restore": "Type RESTORE in capitals."
         },
         "abort": {

@@ -71,13 +71,7 @@ class BackupStore:
         if label:
             stem = f"{label}_{stem}"
         path = self.root / f"{stem}{ext}"
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        with open(tmp, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp, 0o600)  # contains network keys
-        os.replace(tmp, path)
+        _write_private(path, data)
 
         meta = {
             **meta,
@@ -88,7 +82,8 @@ class BackupStore:
             "file": path.name,
         }
         meta_path = self.root / f"{stem}{META_SUFFIX}"
-        meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True))
+        # The sidecar can hold secrets too (Z-Wave S0/S2 keys), so same treatment.
+        _write_private(meta_path, json.dumps(meta, indent=2, sort_keys=True).encode())
 
         self._rotate()
         return BackupRecord(self.source, path, now, len(data), meta)
@@ -157,3 +152,19 @@ class BackupStore:
 
     def read(self, record: BackupRecord) -> bytes:
         return record.path.read_bytes()
+
+
+def _write_private(path: Path, data: bytes) -> None:
+    """Atomically write ``data`` to ``path`` as 0600 (created 0600, never world-readable)."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)  # O_CREAT mode is ignored if tmp already existed
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
