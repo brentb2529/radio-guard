@@ -1,17 +1,19 @@
-"""Zigbee2MQTT backup source."""
+"""Zigbee2MQTT backup source: persistent subscriptions + transaction correlation."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import async_fire_mqtt_message
 
 from custom_components.radio_guard.backup.base import SourceUnavailable
 from custom_components.radio_guard.backup.z2m import Zigbee2MQTTSource, _summarize_ocbf
+from custom_components.radio_guard.const import Z2M_BACKUP_TIMEOUT
+from custom_components.radio_guard.storage import BackupStore
 from homeassistant.core import HomeAssistant
 
 from .conftest import BRIDGE_INFO_SAMPLE, OCBF_SAMPLE, make_z2m_zip, z2m_zip_b64
@@ -23,18 +25,22 @@ INFO = "zigbee2mqtt/bridge/info"
 
 @pytest.fixture
 async def source(hass: HomeAssistant, mqtt_mock) -> Zigbee2MQTTSource:
-    return Zigbee2MQTTSource(hass, "zigbee2mqtt/")
+    """A source with live subscriptions, torn down after the test."""
+    src = Zigbee2MQTTSource(hass, "zigbee2mqtt/")
+    await src.async_setup()
+    yield src
+    await src.async_teardown()
 
 
 @pytest.fixture
-def no_timeouts():
-    """Make the 5s bridge/info wait and the 60s request wait resolve instantly when nothing answers."""
-    real_wait_for = asyncio.wait_for
+def fast_timeouts():
+    """Make every asyncio.wait_for in z2m.py time out almost immediately."""
+    real = asyncio.wait_for
 
-    async def fast_wait_for(fut, timeout):
-        return await real_wait_for(fut, 0.05)
+    async def fast(fut, timeout):
+        return await real(fut, 0.02)
 
-    with patch("custom_components.radio_guard.backup.z2m.asyncio.wait_for", fast_wait_for):
+    with patch("custom_components.radio_guard.backup.z2m.asyncio.wait_for", fast):
         yield
 
 
@@ -42,43 +48,88 @@ def _published(mqtt_mock, topic: str) -> list:
     return [c for c in mqtt_mock.async_publish.call_args_list if c.args[0] == topic]
 
 
-async def _respond_to_backup(hass: HomeAssistant, mqtt_mock, response: dict, info: dict | None = None):
-    """Wait for the request publish, then fire the response (and retained info if given)."""
-    for _ in range(50):
-        await asyncio.sleep(0)
-        if _published(mqtt_mock, REQ):
-            break
-    assert _published(mqtt_mock, REQ), "no backup request was published"
-    async_fire_mqtt_message(hass, RESP, json.dumps(response))
-    if info is not None:
-        # The retained bridge/info arrives as soon as the identity subscription is made
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        async_fire_mqtt_message(hass, INFO, json.dumps(info), retain=True)
+def _subscribed_topics(mqtt_mock) -> list[str]:
+    return [c.args[0] for c in mqtt_mock.async_subscribe.call_args_list]
 
 
-async def test_base_topic_normalized_and_available(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+def _publish_info(hass: HomeAssistant, info: dict = BRIDGE_INFO_SAMPLE) -> None:
+    async_fire_mqtt_message(hass, INFO, json.dumps(info), retain=True)
+
+
+async def _wait_for_request(mqtt_mock) -> dict:
+    """Wait until the backup request is published and return its parsed payload."""
+    for _ in range(100):
+        await asyncio.sleep(0)
+        if calls := _published(mqtt_mock, REQ):
+            return json.loads(calls[-1].args[1])
+    raise AssertionError("no backup request was published")
+
+
+# ---------------------------------------------------------------- lifecycle
+
+
+async def test_basic_attributes(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
     assert source.base_topic == "zigbee2mqtt"
-    assert source.available() is True
     assert source.id == "zigbee2mqtt"
     assert source.name == "Zigbee2MQTT"
+    assert source.available() is True
 
 
-async def test_unavailable_without_mqtt(hass: HomeAssistant) -> None:
+async def test_setup_subscribes_once_and_teardown_releases(hass: HomeAssistant, mqtt_mock) -> None:
+    src = Zigbee2MQTTSource(hass, "z2m")
+    await src.async_setup()
+    assert _subscribed_topics(mqtt_mock) == ["z2m/bridge/info", "z2m/bridge/response/backup"]
+    assert len(src._unsubs) == 2
+    # idempotent
+    await src.async_setup()
+    assert len(_subscribed_topics(mqtt_mock)) == 2
+
+    await src.async_teardown()
+    assert src._unsubs == []
+    # a message arriving after teardown is ignored
+    async_fire_mqtt_message(hass, "z2m/bridge/info", json.dumps(BRIDGE_INFO_SAMPLE))
+    await hass.async_block_till_done()
+    assert src._info == {}
+
+
+async def test_setup_waits_for_mqtt_client(hass: HomeAssistant, mqtt_mock) -> None:
+    src = Zigbee2MQTTSource(hass, "z2m")
+    with patch(
+        "homeassistant.components.mqtt.async_wait_for_mqtt_client", AsyncMock(return_value=True)
+    ) as wait:
+        await src.async_setup()
+    wait.assert_awaited_once_with(hass)
+
+
+async def test_setup_noop_without_mqtt(hass: HomeAssistant) -> None:
     src = Zigbee2MQTTSource(hass, "zigbee2mqtt")
     assert src.available() is False
-    with pytest.raises(SourceUnavailable):
+    await src.async_setup()  # does not raise, does not subscribe
+    assert src._unsubs == []
+    with pytest.raises(SourceUnavailable, match="MQTT integration is not loaded"):
         await src.async_identity()
-    with pytest.raises(SourceUnavailable):
+    with pytest.raises(SourceUnavailable, match="MQTT integration is not loaded"):
         await src.async_backup()
+    await src.async_teardown()
 
 
-async def test_identity_from_retained_bridge_info(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
-    task = hass.async_create_task(source.async_identity())
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    async_fire_mqtt_message(hass, INFO, json.dumps(BRIDGE_INFO_SAMPLE), retain=True)
-    ident = await task
+async def test_teardown_cancels_pending_requests(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
+    task = hass.async_create_task(source.async_backup())
+    await _wait_for_request(mqtt_mock)
+    assert len(source._pending) == 1
+    await source.async_teardown()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert source._pending == {}
+
+
+# ----------------------------------------------------------------- identity
+
+
+async def test_identity_from_retained_bridge_info(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+    _publish_info(hass)
+    await hass.async_block_till_done()
+    ident = await source.async_identity()
     assert ident == {
         "ieee": "0x00124b0024c2f0a1",
         "coordinator_type": "zStack3x0",
@@ -89,43 +140,65 @@ async def test_identity_from_retained_bridge_info(hass: HomeAssistant, mqtt_mock
         "z2m_version": "1.42.0",
         "zigbee_herdsman": "2.1.3",
     }
-    # subscription is released afterwards
-    sub_calls = [c for c in mqtt_mock.async_subscribe.call_args_list if c.args[0] == INFO]
-    assert len(sub_calls) == 1
 
 
-async def test_identity_without_bridge_info_times_out_to_empty(
-    hass: HomeAssistant, source: Zigbee2MQTTSource, no_timeouts
-) -> None:
-    ident = await source.async_identity()
-    assert all(v is None for v in ident.values())
-    assert set(ident) == {
-        "ieee", "coordinator_type", "coordinator_version", "pan_id",
-        "extended_pan_id", "channel", "z2m_version", "zigbee_herdsman",
-    }
-
-
-async def test_identity_bad_json_is_empty(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+async def test_identity_waits_for_late_bridge_info(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
     task = hass.async_create_task(source.async_identity())
     await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    async_fire_mqtt_message(hass, INFO, "not json", retain=True)
+    assert not task.done()
+    _publish_info(hass)
     ident = await task
+    assert ident["ieee"] == "0x00124b0024c2f0a1"
+
+
+async def test_identity_tracks_latest_bridge_info(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+    _publish_info(hass)
+    _publish_info(hass, {**BRIDGE_INFO_SAMPLE, "version": "2.0.0"})
+    await hass.async_block_till_done()
+    assert (await source.async_identity())["z2m_version"] == "2.0.0"
+
+
+async def test_identity_without_bridge_info_raises_unavailable(
+    hass: HomeAssistant, source: Zigbee2MQTTSource, fast_timeouts
+) -> None:
+    with pytest.raises(SourceUnavailable, match="No retained zigbee2mqtt/bridge/info"):
+        await source.async_identity()
+
+
+async def test_identity_ignores_bad_json_info(hass: HomeAssistant, source: Zigbee2MQTTSource, fast_timeouts) -> None:
+    async_fire_mqtt_message(hass, INFO, "not json", retain=True)
+    await hass.async_block_till_done()
+    assert source._info == {}
+    with pytest.raises(SourceUnavailable):
+        await source.async_identity()
+
+
+async def test_identity_partial_info(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+    _publish_info(hass, {"version": "1.0"})
+    await hass.async_block_till_done()
+    ident = await source.async_identity()
+    assert ident["z2m_version"] == "1.0"
     assert ident["ieee"] is None
+    assert ident["pan_id"] is None
 
 
-async def test_backup_success(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
+# ------------------------------------------------------------------- backup
+
+
+async def test_backup_success_with_transaction(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
+    _publish_info(hass)
     zip_bytes = make_z2m_zip()
     task = hass.async_create_task(source.async_backup())
-    await _respond_to_backup(
-        hass, mqtt_mock, {"status": "ok", "data": {"zip": z2m_zip_b64(zip_bytes)}}, info=BRIDGE_INFO_SAMPLE
+    req = await _wait_for_request(mqtt_mock)
+
+    assert req == {"transaction": "rg-1"}
+    [call] = _published(mqtt_mock, REQ)
+    assert call.kwargs.get("qos", call.args[2] if len(call.args) > 2 else None) == 1
+
+    async_fire_mqtt_message(
+        hass, RESP, json.dumps({"status": "ok", "transaction": "rg-1", "data": {"zip": z2m_zip_b64(zip_bytes)}})
     )
     payload = await task
-
-    # Request was sent as JSON "{}" with qos 1
-    [req] = _published(mqtt_mock, REQ)
-    assert req.args[1] == "{}"
-    assert req.kwargs.get("qos", req.args[2] if len(req.args) > 2 else None) == 1
 
     assert payload.ext == ".zip"
     assert payload.data == zip_bytes
@@ -133,24 +206,27 @@ async def test_backup_success(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQT
     assert meta["format"] == "zigbee2mqtt-zip"
     assert set(meta["members"]) == {"coordinator_backup.json", "database.db", "configuration.yaml"}
     assert meta["device_count"] == 2
-    assert meta["pan_id"] == 6754  # bridge/info overrides the OCBF string form
-    assert meta["channel"] == 11
     assert meta["ocbf_version"] == 1
     assert meta["ocbf_source"] == "zigbee2mqtt@1.42.0"
+    # bridge/info identity overrides the OCBF string forms
     assert meta["ieee"] == "0x00124b0024c2f0a1"
+    assert meta["pan_id"] == 6754
+    assert meta["channel"] == 11
     assert meta["z2m_version"] == "1.42.0"
     assert meta["coordinator_type"] == "zStack3x0"
-    # response subscription released
-    assert all(c.args[0] != RESP or True for c in mqtt_mock.async_subscribe.call_args_list)
+    assert source._pending == {}
 
 
-async def test_backup_writes_zip_through_store(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, tmp_path: Path) -> None:
-    """End-to-end through BackupStore: a .zip plus a sidecar with ieee/pan_id/device_count."""
-    from custom_components.radio_guard.storage import BackupStore
-
+async def test_backup_writes_zip_and_sidecar_through_store(
+    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, tmp_path: Path
+) -> None:
+    _publish_info(hass)
     store = BackupStore(tmp_path / "rg", "zigbee2mqtt", 5)
     task = hass.async_create_task(source.async_backup())
-    await _respond_to_backup(hass, mqtt_mock, {"status": "ok", "data": {"zip": z2m_zip_b64(make_z2m_zip())}}, info=BRIDGE_INFO_SAMPLE)
+    req = await _wait_for_request(mqtt_mock)
+    async_fire_mqtt_message(
+        hass, RESP, json.dumps({"status": "ok", "transaction": req["transaction"], "data": {"zip": z2m_zip_b64(make_z2m_zip())}})
+    )
     payload = await task
     rec = await hass.async_add_executor_job(store.write, payload.data, payload.ext, payload.meta)
     assert rec.path.suffix == ".zip"
@@ -159,58 +235,114 @@ async def test_backup_writes_zip_through_store(hass: HomeAssistant, mqtt_mock, s
     assert sidecar["ieee"] == "0x00124b0024c2f0a1"
     assert sidecar["pan_id"] == 6754
     assert sidecar["device_count"] == 2
+    assert sidecar["source"] == "zigbee2mqtt"
     assert sidecar["file"] == rec.name
 
 
-async def test_backup_without_bridge_info_still_has_ocbf_identity(
-    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, no_timeouts
+async def test_backup_ignores_response_for_other_transaction(
+    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource
 ) -> None:
+    _publish_info(hass)
+    t1 = hass.async_create_task(source.async_backup())
+    await _wait_for_request(mqtt_mock)
+    t2 = hass.async_create_task(source.async_backup())
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if len(_published(mqtt_mock, REQ)) == 2:
+            break
+    assert set(source._pending) == {"rg-1", "rg-2"}
+
+    # Two waiters: a response with an unknown transaction is dropped, not misdelivered
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "error", "transaction": "someone-else", "error": "x"}))
+    await asyncio.sleep(0)
+    assert not t1.done() and not t2.done()
+
+    # Each response goes to its own waiter, out of order
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "transaction": "rg-2", "data": {"zip": z2m_zip_b64(make_z2m_zip())}}))
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "error", "transaction": "rg-1", "error": "busy"}))
+    p2 = await t2
+    assert p2.ext == ".zip"
+    with pytest.raises(RuntimeError, match="busy"):
+        await t1
+
+
+async def test_backup_legacy_response_without_transaction(
+    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource
+) -> None:
+    """Older Z2M that does not echo the transaction still satisfies a lone waiter."""
+    _publish_info(hass)
     task = hass.async_create_task(source.async_backup())
-    await _respond_to_backup(hass, mqtt_mock, {"status": "ok", "data": {"zip": z2m_zip_b64(make_z2m_zip())}})
+    await _wait_for_request(mqtt_mock)
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "data": {"zip": z2m_zip_b64(make_z2m_zip())}}))
     payload = await task
-    # identity merge is best-effort: empty bridge info yields None values that overwrite OCBF values
+    assert payload.ext == ".zip"
+
+
+async def test_backup_transaction_ids_increment(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
+    _publish_info(hass)
+    for n in (1, 2, 3):
+        task = hass.async_create_task(source.async_backup())
+        req = await _wait_for_request(mqtt_mock)
+        assert req["transaction"] == f"rg-{n}"
+        async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "transaction": f"rg-{n}", "data": {"zip": z2m_zip_b64(make_z2m_zip())}}))
+        await task
+
+
+async def test_backup_identity_failure_is_best_effort(
+    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, fast_timeouts
+) -> None:
+    """No bridge/info: meta still carries the OCBF identity."""
+    task = hass.async_create_task(source.async_backup())
+    await _wait_for_request(mqtt_mock)
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "transaction": "rg-1", "data": {"zip": z2m_zip_b64(make_z2m_zip())}}))
+    payload = await task
+    assert payload.meta["ieee"] == "00124b0024c2f0a1"
+    assert payload.meta["pan_id"] == "1a62"
     assert payload.meta["device_count"] == 2
-    assert payload.meta["ocbf_source"] == "zigbee2mqtt@1.42.0"
-    assert "ieee" in payload.meta
+    assert "z2m_version" not in payload.meta
 
 
 async def test_backup_error_status(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
     task = hass.async_create_task(source.async_backup())
-    await _respond_to_backup(hass, mqtt_mock, {"status": "error", "error": "Coordinator does not support backup"})
+    await _wait_for_request(mqtt_mock)
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "error", "transaction": "rg-1", "error": "Coordinator does not support backup"}))
     with pytest.raises(RuntimeError, match="Z2M backup failed: Coordinator does not support backup"):
         await task
+    assert source._pending == {}
 
 
 async def test_backup_ok_without_zip(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
     task = hass.async_create_task(source.async_backup())
-    await _respond_to_backup(hass, mqtt_mock, {"status": "ok", "data": {}})
+    await _wait_for_request(mqtt_mock)
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "transaction": "rg-1", "data": {}}))
     with pytest.raises(RuntimeError, match="no zip payload"):
         await task
 
 
-async def test_backup_bad_json_response(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
+async def test_backup_bad_json_response_is_ignored_then_times_out(
+    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, fast_timeouts, caplog
+) -> None:
     task = hass.async_create_task(source.async_backup())
-    for _ in range(50):
-        await asyncio.sleep(0)
-        if _published(mqtt_mock, REQ):
-            break
+    await _wait_for_request(mqtt_mock)
     async_fire_mqtt_message(hass, RESP, "{not json")
-    with pytest.raises(ValueError, match="Bad JSON from Z2M"):
-        await task
-
-
-async def test_backup_timeout(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, no_timeouts) -> None:
     with pytest.raises(TimeoutError):
+        await task
+    assert "Bad JSON on zigbee2mqtt/bridge/response/backup" in caplog.text
+
+
+async def test_backup_timeout_message_and_cleanup(
+    hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, fast_timeouts
+) -> None:
+    with pytest.raises(TimeoutError, match="No response from Zigbee2MQTT on zigbee2mqtt/bridge/response/backup") as ei:
         await source.async_backup()
-    # subscription to the response topic was cleaned up: a late response is ignored
-    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok"}))
+    assert "base topic 'zigbee2mqtt'" in str(ei.value)
+    assert source._pending == {}
+    # a late reply for the expired transaction is harmless
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "transaction": "rg-1"}))
     await hass.async_block_till_done()
 
 
-async def test_backup_timeout_constant(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
-    """The request waits Z2M_BACKUP_TIMEOUT seconds."""
-    from custom_components.radio_guard.const import Z2M_BACKUP_TIMEOUT
-
+async def test_backup_uses_configured_timeout(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource) -> None:
     seen: list[float] = []
 
     async def fake_wait_for(fut, timeout):
@@ -222,12 +354,23 @@ async def test_backup_timeout_constant(hass: HomeAssistant, mqtt_mock, source: Z
     assert seen == [Z2M_BACKUP_TIMEOUT]
 
 
-# ---------------------------------------------------------------- restore
+async def test_request_lazily_sets_up(hass: HomeAssistant, mqtt_mock) -> None:
+    """A backup on a source that was never set up subscribes first."""
+    src = Zigbee2MQTTSource(hass, "zigbee2mqtt")
+    assert src._unsubs == []
+    task = hass.async_create_task(src.async_backup())
+    await _wait_for_request(mqtt_mock)
+    assert len(src._unsubs) == 2
+    async_fire_mqtt_message(hass, RESP, json.dumps({"status": "ok", "transaction": "rg-1", "data": {"zip": z2m_zip_b64(make_z2m_zip())}}))
+    await task
+    await src.async_teardown()
+
+
+# ---------------------------------------------------------- pure helpers
 
 
 def test_summarize_ocbf() -> None:
-    out = _summarize_ocbf(OCBF_SAMPLE)
-    assert out == {
+    assert _summarize_ocbf(OCBF_SAMPLE) == {
         "ocbf_version": 1,
         "ocbf_format": "zigpy/open-coordinator-backup",
         "ocbf_source": "zigbee2mqtt@1.42.0",
@@ -239,54 +382,28 @@ def test_summarize_ocbf() -> None:
         "device_count": 2,
     }
     assert _summarize_ocbf({})["device_count"] == 0
+    assert _summarize_ocbf({"devices": None})["device_count"] == 0
 
 
-def test_inspect_zip_without_ocbf() -> None:
-    meta = Zigbee2MQTTSource._inspect_zip(make_z2m_zip(ocbf=None))
-    assert meta == {"format": "zigbee2mqtt-zip", "members": ["database.db", "configuration.yaml"]}
+def test_inspect_zip() -> None:
+    meta = Zigbee2MQTTSource._inspect_zip(make_z2m_zip())
+    assert meta["format"] == "zigbee2mqtt-zip"
+    assert meta["ieee"] == "00124b0024c2f0a1"
+    assert Zigbee2MQTTSource._inspect_zip(make_z2m_zip(ocbf=None)) == {
+        "format": "zigbee2mqtt-zip",
+        "members": ["database.db", "configuration.yaml"],
+    }
 
 
-async def test_restore_check_no_ocbf_member_fails(hass: HomeAssistant, source: Zigbee2MQTTSource, no_timeouts, tmp_path) -> None:
-    with patch.object(source, "_data_dirs", return_value=[tmp_path / "none"]):
-        check = await source.async_restore_check(make_z2m_zip(ocbf=None), {"x": 1})
-    assert check.ok is False
-    assert check.reasons == ["Backup zip does not contain coordinator_backup.json"]
-    assert check.backup == {"x": 1}
-    assert any("Could not locate the Z2M data directory" in w for w in check.warnings)
+def test_inspect_zip_rejects_garbage() -> None:
+    import zipfile
+
+    with pytest.raises(zipfile.BadZipFile):
+        Zigbee2MQTTSource._inspect_zip(b"not a zip")
 
 
-async def test_restore_check_same_ieee_warns(hass: HomeAssistant, mqtt_mock, source: Zigbee2MQTTSource, tmp_path) -> None:
-    info = {**BRIDGE_INFO_SAMPLE, "coordinator": {**BRIDGE_INFO_SAMPLE["coordinator"], "ieee_address": "00124B0024C2F0A1"}}
-    with patch.object(source, "_data_dirs", return_value=[tmp_path / "none"]):
-        task = hass.async_create_task(source.async_restore_check(make_z2m_zip(), {}))
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        async_fire_mqtt_message(hass, INFO, json.dumps(info), retain=True)
-        check = await task
-    assert check.ok is True
-    assert check.current["ieee"] == "00124B0024C2F0A1"
-    assert any("already has the backup's IEEE" in w for w in check.warnings)
-
-
-async def test_restore_check_addon_and_data_dir_warnings(hass: HomeAssistant, source: Zigbee2MQTTSource, no_timeouts, tmp_path: Path) -> None:
-    data_dir = tmp_path / "addon_configs" / "45df7312_zigbee2mqtt"
-    data_dir.mkdir(parents=True)
-    (data_dir / "configuration.yaml").write_text("x: 1")
-
-    with patch.object(source, "_data_dirs", return_value=[data_dir]):
-        with patch.object(source, "_addon_slug", AsyncMock(return_value="45df7312_zigbee2mqtt")):
-            check = await source.async_restore_check(make_z2m_zip(), {})
-        assert any(f"Will stop add-on 45df7312_zigbee2mqtt, write {data_dir}" in w for w in check.warnings)
-
-        with patch.object(source, "_addon_slug", AsyncMock(return_value=None)):
-            check = await source.async_restore_check(make_z2m_zip(), {})
-        assert any("no Supervisor add-on" in w for w in check.warnings)
-    assert check.ok is True
-
-
-async def test_data_dirs_candidates(hass: HomeAssistant) -> None:
-    src = Zigbee2MQTTSource(hass, "z")
-    dirs = [str(p) for p in src._data_dirs()]
+def test_data_dirs_candidates(hass: HomeAssistant) -> None:
+    dirs = [str(p) for p in Zigbee2MQTTSource(hass, "z")._data_dirs()]
     assert dirs == [
         "/addon_configs/45df7312_zigbee2mqtt",
         "/addon_configs/45df7312_zigbee2mqtt_edge",
@@ -295,14 +412,147 @@ async def test_data_dirs_candidates(hass: HomeAssistant) -> None:
     ]
 
 
-async def test_addon_slug_not_hassio(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
-    """Without Supervisor the lookup returns None (or the import fails -> None)."""
-    assert await source._addon_slug() is None
+def test_find_data_dir(hass: HomeAssistant, tmp_path: Path) -> None:
+    src = Zigbee2MQTTSource(hass, "z")
+    good = tmp_path / "good"
+    good.mkdir()
+    (good / "configuration.yaml").write_text("x")
+    with patch.object(src, "_data_dirs", return_value=[tmp_path / "missing", good]):
+        assert src._find_data_dir() == good
+    with patch.object(src, "_data_dirs", return_value=[tmp_path / "missing"]):
+        assert src._find_data_dir() is None
+
+
+def test_write_restore_files(tmp_path: Path) -> None:
+    dest = tmp_path / "out" / "nested"
+    Zigbee2MQTTSource._write_restore_files(make_z2m_zip(), dest)
+    assert json.loads((dest / "coordinator_backup.json").read_text()) == OCBF_SAMPLE
+    assert (dest / "database.db").exists()
+    assert not (dest / "configuration.yaml").exists()
+
+
+# ------------------------------------------------------------ add-on mgmt
+
+
+async def test_addon_manager_none_without_supervisor(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+    assert await source._addon_manager() is None
+
+
+async def test_addon_manager_picks_installed_slug(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+    from homeassistant.components.hassio.addon_manager import AddonState
+
+    infos = {
+        "45df7312_zigbee2mqtt": AddonState.NOT_INSTALLED,
+        "45df7312_zigbee2mqtt_edge": AddonState.RUNNING,
+    }
+
+    class FakeMgr:
+        def __init__(self, hass_, logger, name, slug):
+            self.addon_slug = slug
+
+        async def async_get_addon_info(self):
+            return MagicMock(state=infos[self.addon_slug])
+
+    with (
+        patch("homeassistant.helpers.hassio.is_hassio", return_value=True),
+        patch("homeassistant.components.hassio.addon_manager.AddonManager", FakeMgr),
+    ):
+        mgr = await source._addon_manager()
+    assert mgr is not None
+    assert mgr.addon_slug == "45df7312_zigbee2mqtt_edge"
+
+
+async def test_addon_manager_none_when_lookup_fails(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
+    class FailingMgr:
+        def __init__(self, hass_, logger, name, slug):
+            self.addon_slug = slug
+
+        async def async_get_addon_info(self):
+            raise RuntimeError("supervisor down")
+
+    with (
+        patch("homeassistant.helpers.hassio.is_hassio", return_value=True),
+        patch("homeassistant.components.hassio.addon_manager.AddonManager", FailingMgr),
+    ):
+        assert await source._addon_manager() is None
+
+
+# ----------------------------------------------------------------- restore
+
+
+async def test_restore_check_ok_with_warnings(hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path) -> None:
+    _publish_info(hass)
+    with (
+        patch.object(source, "_data_dirs", return_value=[tmp_path / "none"]),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=None)),
+    ):
+        check = await source.async_restore_check(make_z2m_zip(), {"stored": True})
+    assert check.ok is True
+    assert check.reasons == []
+    assert check.backup == {"stored": True}
+    assert check.current["ieee"] == "0x00124b0024c2f0a1"
+    assert check.warnings == ["Could not locate the Z2M data directory; files will be staged for manual restore"]
+
+
+async def test_restore_check_no_ocbf_member_fails(
+    hass: HomeAssistant, source: Zigbee2MQTTSource, fast_timeouts, tmp_path: Path
+) -> None:
+    with (
+        patch.object(source, "_data_dirs", return_value=[tmp_path / "none"]),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=None)),
+    ):
+        check = await source.async_restore_check(make_z2m_zip(ocbf=None), {})
+    assert check.ok is False
+    assert check.reasons == ["Backup zip does not contain coordinator_backup.json"]
+    assert any(w.startswith("Could not read live coordinator identity:") for w in check.warnings)
+    assert check.current == {}
+
+
+async def test_restore_check_same_ieee_warns(hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path) -> None:
+    # Backup OCBF has 00124b0024c2f0a1; make the live one match case-insensitively (no 0x prefix)
+    info = {**BRIDGE_INFO_SAMPLE, "coordinator": {**BRIDGE_INFO_SAMPLE["coordinator"], "ieee_address": "00124B0024C2F0A1"}}
+    _publish_info(hass, info)
+    with (
+        patch.object(source, "_data_dirs", return_value=[tmp_path / "none"]),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=None)),
+    ):
+        check = await source.async_restore_check(make_z2m_zip(), {})
+    assert check.ok is True
+    assert any("already has the backup's IEEE address" in w for w in check.warnings)
+
+
+async def test_restore_check_different_ieee_no_warning(hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path) -> None:
+    _publish_info(hass)  # live is "0x00124b..." which does not string-match "00124b..."
+    with (
+        patch.object(source, "_data_dirs", return_value=[tmp_path / "none"]),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=None)),
+    ):
+        check = await source.async_restore_check(make_z2m_zip(), {})
+    assert not any("already has the backup's IEEE" in w for w in check.warnings)
+
+
+async def test_restore_check_addon_and_data_dir_warnings(
+    hass: HomeAssistant, source: Zigbee2MQTTSource, fast_timeouts, tmp_path: Path
+) -> None:
+    data_dir = tmp_path / "addon_configs" / "45df7312_zigbee2mqtt"
+    data_dir.mkdir(parents=True)
+    (data_dir / "configuration.yaml").write_text("x: 1")
+    mgr = MagicMock(addon_slug="45df7312_zigbee2mqtt")
+
+    with patch.object(source, "_data_dirs", return_value=[data_dir]):
+        with patch.object(source, "_addon_manager", AsyncMock(return_value=mgr)):
+            check = await source.async_restore_check(make_z2m_zip(), {})
+        assert f"Will stop add-on 45df7312_zigbee2mqtt, write {data_dir}, then start it" in check.warnings
+
+        with patch.object(source, "_addon_manager", AsyncMock(return_value=None)):
+            check = await source.async_restore_check(make_z2m_zip(), {})
+        assert any("no Supervisor add-on; you must stop/start Z2M yourself" in w for w in check.warnings)
+    assert check.ok is True
 
 
 async def test_restore_without_addon_stages_files_and_raises(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
     with (
-        patch.object(source, "_addon_slug", AsyncMock(return_value=None)),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=None)),
         patch.object(source, "_find_data_dir", return_value=None),
         pytest.raises(RuntimeError, match="not running as a Supervisor add-on") as ei,
     ):
@@ -314,43 +564,66 @@ async def test_restore_without_addon_stages_files_and_raises(hass: HomeAssistant
     assert not (staging / "configuration.yaml").exists()
 
 
+async def test_restore_with_data_dir_but_no_addon_also_stages(
+    hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path
+) -> None:
+    data_dir = tmp_path / "z2m"
+    data_dir.mkdir()
+    (data_dir / "configuration.yaml").write_text("x")
+    with (
+        patch.object(source, "_addon_manager", AsyncMock(return_value=None)),
+        patch.object(source, "_data_dirs", return_value=[data_dir]),
+        pytest.raises(RuntimeError),
+    ):
+        await source.async_restore(make_z2m_zip(), {})
+    # Nothing was written into the live data dir without being able to stop Z2M
+    assert not (data_dir / "coordinator_backup.json").exists()
+
+
 async def test_restore_with_addon_stops_writes_starts(hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path) -> None:
     data_dir = tmp_path / "z2m"
     data_dir.mkdir()
     (data_dir / "configuration.yaml").write_text("x")
     order: list[str] = []
+    mgr = MagicMock(addon_slug="45df7312_zigbee2mqtt")
 
-    async def stop(hass_, slug):
-        order.append(f"stop:{slug}")
+    async def stop():
+        order.append("stop")
+        assert not (data_dir / "coordinator_backup.json").exists()
 
-    async def start(hass_, slug):
-        order.append(f"start:{slug}")
+    async def start():
+        order.append("start")
         assert (data_dir / "coordinator_backup.json").exists()
 
+    mgr.async_stop_addon = stop
+    mgr.async_start_addon = start
+
     with (
-        patch.object(source, "_addon_slug", AsyncMock(return_value="45df7312_zigbee2mqtt")),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=mgr)),
         patch.object(source, "_data_dirs", return_value=[data_dir]),
-        patch("homeassistant.components.hassio.async_stop_addon", stop, create=True),
-        patch("homeassistant.components.hassio.async_start_addon", start, create=True),
     ):
         await source.async_restore(make_z2m_zip(), {})
 
-    assert order == ["stop:45df7312_zigbee2mqtt", "start:45df7312_zigbee2mqtt"]
+    assert order == ["stop", "start"]
+    assert json.loads((data_dir / "coordinator_backup.json").read_text()) == OCBF_SAMPLE
     assert (data_dir / "database.db").exists()
 
 
-async def test_restore_with_addon_restarts_even_if_write_fails(hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path) -> None:
+async def test_restore_with_addon_restarts_even_if_write_fails(
+    hass: HomeAssistant, source: Zigbee2MQTTSource, tmp_path: Path
+) -> None:
     data_dir = tmp_path / "z2m"
     data_dir.mkdir()
     (data_dir / "configuration.yaml").write_text("x")
-    started = AsyncMock()
+    mgr = MagicMock(addon_slug="45df7312_zigbee2mqtt")
+    mgr.async_stop_addon = AsyncMock()
+    mgr.async_start_addon = AsyncMock()
     with (
-        patch.object(source, "_addon_slug", AsyncMock(return_value="45df7312_zigbee2mqtt")),
+        patch.object(source, "_addon_manager", AsyncMock(return_value=mgr)),
         patch.object(source, "_data_dirs", return_value=[data_dir]),
-        patch("homeassistant.components.hassio.async_stop_addon", AsyncMock(), create=True),
-        patch("homeassistant.components.hassio.async_start_addon", started, create=True),
         patch.object(source, "_write_restore_files", side_effect=OSError("ro fs")),
         pytest.raises(OSError),
     ):
         await source.async_restore(make_z2m_zip(), {})
-    started.assert_awaited_once()
+    mgr.async_stop_addon.assert_awaited_once()
+    mgr.async_start_addon.assert_awaited_once()

@@ -6,6 +6,7 @@ configuration.yaml, exactly as Z2M does.
 """
 
 import base64
+import os
 import io
 import json
 import sys
@@ -58,6 +59,12 @@ def make_zip() -> bytes:
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
+    if os.environ.get("FAKE_IEEE"):
+        INFO["coordinator"]["ieee_address"] = os.environ["FAKE_IEEE"]
+        OCBF["coordinator_ieee"] = os.environ["FAKE_IEEE"].replace("0x", "")
+    if os.environ.get("FAKE_EPID"):
+        INFO["network"]["extended_pan_id"] = os.environ["FAKE_EPID"]
+        OCBF["extended_pan_id"] = os.environ["FAKE_EPID"].replace("0x", "")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="fake-z2m")
 
     def on_connect(c, u, f, rc, props=None):

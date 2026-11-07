@@ -1,3 +1,4 @@
 fake z2m connected Success
-fake z2m got zigbee2mqtt/bridge/request/backup b'{}'
+fake z2m got zigbee2mqtt/bridge/info b'{"version": "2.8.0", "zigbee_herdsman_version": "7.0.0", "zigbee_herdsman_conver'
+fake z2m got zigbee2mqtt/bridge/state b'{"state": "online"}'
 fake z2m got zigbee2mqtt/bridge/request/backup b'{"transaction": "rg-1"}'

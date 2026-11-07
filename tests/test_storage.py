@@ -46,14 +46,16 @@ def test_write_creates_file_and_sidecar(store: BackupStore, root: Path, freezer)
     assert meta == {
         "ieee": "00:11",
         "device_count": 2,
+        "label": None,
         "source": "zha",
         "created": "2026-11-07T03:17:00+00:00",
         "size": 8,
         "file": "20261107T031700Z.json",
     }
     assert rec.meta == meta
-    # No temp file left behind
+    # No temp file left behind; file is private (contains network keys)
     assert not list((root / "zha").glob("*.tmp"))
+    assert oct(rec.path.stat().st_mode & 0o777) == "0o600"
 
 
 def test_write_tmp_file_atomicity(store: BackupStore, root: Path, freezer) -> None:
@@ -189,6 +191,44 @@ def test_rotate_respects_retention(store: BackupStore, root: Path, freezer) -> N
     for kept in recs[2:]:
         assert kept.path.exists()
         assert (root / "zha" / f"{kept.path.stem}{META_SUFFIX}").exists()
+
+
+def test_write_with_label_prefixes_stem_and_records_label(store: BackupStore, root: Path, freezer) -> None:
+    freezer.move_to("2026-11-08 12:00:00+00:00")
+    rec = store.write(b"snap", ".nvm", {}, label="pre_restore")
+    assert rec.path == root / "zha" / "pre_restore_20261108T120000Z.nvm"
+    assert rec.meta["label"] == "pre_restore"
+    assert (root / "zha" / f"pre_restore_20261108T120000Z{META_SUFFIX}").exists()
+    [listed] = store.list()
+    assert listed.meta["label"] == "pre_restore"
+    assert store.resolve("pre_restore_20261108T120000Z.nvm").path == rec.path
+
+
+def test_rotate_labelled_backups_separately(root: Path, freezer) -> None:
+    """Labelled snapshots have their own retention of max(3, retention // 2) and never evict nightlies."""
+    store = BackupStore(root, "zwave_js", retention=10)
+    t0 = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    nightly = [_write_at(store, freezer, t0 + timedelta(hours=i), b"n", ext=".nvm") for i in range(4)]
+    labelled = []
+    for i in range(7):
+        freezer.move_to(t0 + timedelta(days=1, hours=i))
+        labelled.append(store.write(b"l", ".nvm", {}, label="pre_restore"))
+
+    remaining = store.list()
+    # all 4 nightlies survive (retention 10), only the newest 5 labelled (10 // 2) remain
+    assert all(r.path.exists() for r in nightly)
+    kept_labelled = [r for r in remaining if r.meta.get("label")]
+    assert len(kept_labelled) == 5
+    assert [r.path for r in kept_labelled] == [r.path for r in reversed(labelled[2:])]
+    for old in labelled[:2]:
+        assert not old.path.exists()
+
+    # small retention keeps at least 3 labelled
+    small = BackupStore(root, "zha", retention=2)
+    for i in range(5):
+        freezer.move_to(t0 + timedelta(days=2, hours=i))
+        small.write(b"l", ".json", {}, label="pre_restore")
+    assert len([r for r in small.list() if r.meta.get("label")]) == 3
 
 
 def test_rotate_keeps_newest_by_created_not_name(root: Path, freezer) -> None:

@@ -5,13 +5,14 @@ Layout (relative to the HA config directory):
     radio_guard/
       zigbee2mqtt/
         20261107T031700Z.zip
-        20261107T031700Z.json      <- sidecar metadata
+        20261107T031700Z.meta.json   <- sidecar metadata
       zha/
-        20261107T031700Z.json      <- OCBF backup; metadata is embedded
+        20261107T031700Z.json        <- zigpy network backup
         20261107T031700Z.meta.json
       zwave_js/
-        20261107T031700Z.nvm       <- raw NVM bytes
-        20261107T031700Z.json
+        20261107T031700Z.nvm         <- raw NVM bytes
+        20261107T031700Z.meta.json
+        pre_restore_20261108T120000Z.nvm   <- snapshot of a target taken before a restore
 
 Everything lives under /config so it is included in Home Assistant's own
 backups automatically. All filesystem work runs in the executor.
@@ -63,20 +64,24 @@ class BackupStore:
 
     # ---------------------------------------------------------------- write
 
-    def write(self, data: bytes, ext: str, meta: dict[str, Any]) -> BackupRecord:
+    def write(self, data: bytes, ext: str, meta: dict[str, Any], label: str | None = None) -> BackupRecord:
         self.root.mkdir(parents=True, exist_ok=True)
         now = datetime.now(UTC)
         stem = now.strftime("%Y%m%dT%H%M%SZ")
+        if label:
+            stem = f"{label}_{stem}"
         path = self.root / f"{stem}{ext}"
         tmp = path.with_suffix(path.suffix + ".tmp")
         with open(tmp, "wb") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)  # contains network keys
         os.replace(tmp, path)
 
         meta = {
             **meta,
+            "label": label,
             "source": self.source,
             "created": now.isoformat(),
             "size": len(data),
@@ -90,7 +95,9 @@ class BackupStore:
 
     def _rotate(self) -> None:
         records = self.list()
-        for old in records[self.retention :]:
+        nightly = [r for r in records if not r.meta.get("label")]
+        labelled = [r for r in records if r.meta.get("label")]
+        for old in nightly[self.retention :] + labelled[max(3, self.retention // 2) :]:
             try:
                 old.path.unlink(missing_ok=True)
                 self._meta_path_for(old.path).unlink(missing_ok=True)

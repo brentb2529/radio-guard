@@ -1,4 +1,9 @@
-"""Config flow for Radio Guard."""
+"""Config flow for Radio Guard.
+
+Setup is one step: pick the coordinators (pre-selected from what is loaded)
+and whether to take a first backup right away. Everything else lives in
+Options, grouped into collapsible sections with sensible defaults.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
 from .const import (
@@ -14,9 +20,12 @@ from .const import (
     CONF_BACKUP_DIR,
     CONF_BACKUP_HOUR,
     CONF_BACKUP_MINUTE,
+    CONF_BACKUP_TIME,
+    CONF_FIRST_BACKUP,
     CONF_HEARTBEAT_ENABLED,
     CONF_HEARTBEAT_INTERVAL,
     CONF_HEARTBEAT_TOPIC,
+    CONF_MAX_RESTORE_AGE_DAYS,
     CONF_RETENTION,
     CONF_SOURCES,
     CONF_STALE_HOURS,
@@ -24,9 +33,9 @@ from .const import (
     DEFAULT_BACKUP_DIR,
     DEFAULT_BACKUP_HOUR,
     DEFAULT_BACKUP_MINUTE,
-    DEFAULT_HEARTBEAT_ENABLED,
     DEFAULT_HEARTBEAT_INTERVAL,
     DEFAULT_HEARTBEAT_TOPIC,
+    DEFAULT_MAX_RESTORE_AGE_DAYS,
     DEFAULT_RETENTION,
     DEFAULT_STALE_HOURS,
     DEFAULT_Z2M_BASE_TOPIC,
@@ -37,8 +46,14 @@ from .const import (
     SOURCE_ZWAVE,
 )
 
+SECTION_SCHEDULE = "schedule"
+SECTION_STORAGE = "storage"
+SECTION_HEARTBEAT = "heartbeat"
+SECTION_Z2M = "zigbee2mqtt"
 
-def _detect_sources(hass: HomeAssistant) -> list[str]:
+
+def detect_sources(hass: HomeAssistant) -> list[str]:
+    """Which backup sources look usable right now."""
     found: list[str] = []
     if "mqtt" in hass.config.components:
         found.append(SOURCE_Z2M)
@@ -49,72 +64,156 @@ def _detect_sources(hass: HomeAssistant) -> list[str]:
     return found
 
 
-def _schema(hass: HomeAssistant, current: dict[str, Any]) -> vol.Schema:
-    detected = _detect_sources(hass)
+def _sources_selector() -> selector.SelectSelector:
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[selector.SelectOptionDict(value=s, label=SOURCE_NAMES[s]) for s in ALL_SOURCES],
+            multiple=True,
+            mode=selector.SelectSelectorMode.LIST,
+        )
+    )
+
+
+def _time_str(hour: int, minute: int) -> str:
+    return f"{int(hour):02d}:{int(minute):02d}:00"
+
+
+def _parse_time(value: str) -> tuple[int, int]:
+    parts = str(value).split(":")
+    return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+
+
+def _options_schema(current: dict[str, Any], mqtt_loaded: bool) -> vol.Schema:
     return vol.Schema(
         {
-            vol.Required(CONF_SOURCES, default=current.get(CONF_SOURCES, detected)): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[selector.SelectOptionDict(value=s, label=SOURCE_NAMES[s]) for s in ALL_SOURCES],
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.LIST,
-                )
+            vol.Required(CONF_SOURCES, default=current.get(CONF_SOURCES, [])): _sources_selector(),
+            vol.Required(SECTION_SCHEDULE): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_BACKUP_TIME,
+                            default=_time_str(
+                                current.get(CONF_BACKUP_HOUR, DEFAULT_BACKUP_HOUR),
+                                current.get(CONF_BACKUP_MINUTE, DEFAULT_BACKUP_MINUTE),
+                            ),
+                        ): selector.TimeSelector(),
+                        vol.Optional(
+                            CONF_RETENTION, default=current.get(CONF_RETENTION, DEFAULT_RETENTION)
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=1, max=365, step=1, mode=selector.NumberSelectorMode.BOX
+                            )
+                        ),
+                        vol.Optional(
+                            CONF_STALE_HOURS, default=current.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS)
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=12,
+                                max=168,
+                                step=12,
+                                unit_of_measurement="h",
+                                mode=selector.NumberSelectorMode.SLIDER,
+                            )
+                        ),
+                        vol.Optional(
+                            CONF_MAX_RESTORE_AGE_DAYS,
+                            default=current.get(CONF_MAX_RESTORE_AGE_DAYS, DEFAULT_MAX_RESTORE_AGE_DAYS),
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=1,
+                                max=365,
+                                step=1,
+                                unit_of_measurement="d",
+                                mode=selector.NumberSelectorMode.BOX,
+                            )
+                        ),
+                    }
+                ),
+                {"collapsed": True},
             ),
-            vol.Optional(
-                CONF_Z2M_BASE_TOPIC,
-                default=current.get(CONF_Z2M_BASE_TOPIC, DEFAULT_Z2M_BASE_TOPIC),
-            ): str,
-            vol.Optional(
-                CONF_BACKUP_HOUR, default=current.get(CONF_BACKUP_HOUR, DEFAULT_BACKUP_HOUR)
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=23, mode=selector.NumberSelectorMode.BOX)
+            vol.Required(SECTION_Z2M): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_Z2M_BASE_TOPIC,
+                            default=current.get(CONF_Z2M_BASE_TOPIC, DEFAULT_Z2M_BASE_TOPIC),
+                        ): str,
+                    }
+                ),
+                {"collapsed": True},
             ),
-            vol.Optional(
-                CONF_BACKUP_MINUTE, default=current.get(CONF_BACKUP_MINUTE, DEFAULT_BACKUP_MINUTE)
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=59, mode=selector.NumberSelectorMode.BOX)
+            vol.Required(SECTION_STORAGE): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_BACKUP_DIR, default=current.get(CONF_BACKUP_DIR, DEFAULT_BACKUP_DIR)
+                        ): str,
+                    }
+                ),
+                {"collapsed": True},
             ),
-            vol.Optional(
-                CONF_RETENTION, default=current.get(CONF_RETENTION, DEFAULT_RETENTION)
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=365, mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Optional(
-                CONF_STALE_HOURS, default=current.get(CONF_STALE_HOURS, DEFAULT_STALE_HOURS)
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=720, mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Optional(CONF_BACKUP_DIR, default=current.get(CONF_BACKUP_DIR, DEFAULT_BACKUP_DIR)): str,
-            vol.Optional(
-                CONF_HEARTBEAT_ENABLED,
-                default=current.get(CONF_HEARTBEAT_ENABLED, DEFAULT_HEARTBEAT_ENABLED),
-            ): bool,
-            vol.Optional(
-                CONF_HEARTBEAT_TOPIC,
-                default=current.get(CONF_HEARTBEAT_TOPIC, DEFAULT_HEARTBEAT_TOPIC),
-            ): str,
-            vol.Optional(
-                CONF_HEARTBEAT_INTERVAL,
-                default=current.get(CONF_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_INTERVAL),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=5, max=3600, mode=selector.NumberSelectorMode.BOX)
+            vol.Required(SECTION_HEARTBEAT): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_HEARTBEAT_ENABLED,
+                            default=current.get(CONF_HEARTBEAT_ENABLED, mqtt_loaded),
+                        ): bool,
+                        vol.Optional(
+                            CONF_HEARTBEAT_TOPIC,
+                            default=current.get(CONF_HEARTBEAT_TOPIC, DEFAULT_HEARTBEAT_TOPIC),
+                        ): str,
+                        vol.Optional(
+                            CONF_HEARTBEAT_INTERVAL,
+                            default=current.get(CONF_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_INTERVAL),
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=5,
+                                max=3600,
+                                step=5,
+                                unit_of_measurement="s",
+                                mode=selector.NumberSelectorMode.BOX,
+                            )
+                        ),
+                    }
+                ),
+                {"collapsed": True},
             ),
         }
     )
 
 
-def _coerce(data: dict[str, Any]) -> dict[str, Any]:
-    out = dict(data)
+def flatten_options(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Flatten section()-nested input into the flat storage layout."""
+    out: dict[str, Any] = {}
+    for key, value in user_input.items():
+        if isinstance(value, dict) and key in (
+            SECTION_SCHEDULE,
+            SECTION_STORAGE,
+            SECTION_HEARTBEAT,
+            SECTION_Z2M,
+        ):
+            out.update(value)
+        else:
+            out[key] = value
+    if CONF_BACKUP_TIME in out:
+        h, m = _parse_time(out.pop(CONF_BACKUP_TIME))
+        out[CONF_BACKUP_HOUR], out[CONF_BACKUP_MINUTE] = h, m
     for key in (
         CONF_BACKUP_HOUR,
         CONF_BACKUP_MINUTE,
         CONF_RETENTION,
         CONF_STALE_HOURS,
         CONF_HEARTBEAT_INTERVAL,
+        CONF_MAX_RESTORE_AGE_DAYS,
     ):
         if key in out:
             out[key] = int(out[key])
-    out[CONF_BACKUP_DIR] = str(out.get(CONF_BACKUP_DIR, DEFAULT_BACKUP_DIR)).strip("/ ") or DEFAULT_BACKUP_DIR
+    if CONF_BACKUP_DIR in out:
+        clean = str(out[CONF_BACKUP_DIR]).strip().strip("/").replace("..", "")
+        out[CONF_BACKUP_DIR] = clean or DEFAULT_BACKUP_DIR
+    if CONF_Z2M_BASE_TOPIC in out:
+        out[CONF_Z2M_BASE_TOPIC] = str(out[CONF_Z2M_BASE_TOPIC]).strip().strip("/") or DEFAULT_Z2M_BASE_TOPIC
     return out
 
 
@@ -127,15 +226,33 @@ class RadioGuardConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
 
+        detected = detect_sources(self.hass)
         errors: dict[str, str] = {}
         if user_input is not None:
             if not user_input.get(CONF_SOURCES):
                 errors[CONF_SOURCES] = "no_sources"
             else:
-                return self.async_create_entry(title="Radio Guard", data=_coerce(user_input))
+                data = {
+                    CONF_SOURCES: user_input[CONF_SOURCES],
+                    CONF_FIRST_BACKUP: bool(user_input.get(CONF_FIRST_BACKUP, True)),
+                    CONF_HEARTBEAT_ENABLED: "mqtt" in self.hass.config.components,
+                }
+                return self.async_create_entry(title="Radio Guard", data=data)
 
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_SOURCES, default=detected or [SOURCE_Z2M]): _sources_selector(),
+                vol.Optional(CONF_FIRST_BACKUP, default=True): bool,
+            }
+        )
         return self.async_show_form(
-            step_id="user", data_schema=_schema(self.hass, user_input or {}), errors=errors
+            step_id="user",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "detected": ", ".join(SOURCE_NAMES[s] for s in detected) or "none",
+                "backup_dir": DEFAULT_BACKUP_DIR,
+            },
         )
 
     @staticmethod
@@ -145,14 +262,19 @@ class RadioGuardConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class RadioGuardOptionsFlow(OptionsFlow):
-    """Same form, editable later."""
+    """Everything configurable, in collapsible sections."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            if not user_input.get(CONF_SOURCES):
+            flat = flatten_options(user_input)
+            if not flat.get(CONF_SOURCES):
                 errors[CONF_SOURCES] = "no_sources"
             else:
-                return self.async_create_entry(title="", data=_coerce(user_input))
+                return self.async_create_entry(title="", data=flat)
         current = {**self.config_entry.data, **self.config_entry.options}
-        return self.async_show_form(step_id="init", data_schema=_schema(self.hass, current), errors=errors)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=_options_schema(current, "mqtt" in self.hass.config.components),
+            errors=errors,
+        )

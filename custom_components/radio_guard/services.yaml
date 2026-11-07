@@ -4,13 +4,23 @@ backup_now:
       required: false
       selector:
         select:
+          translation_key: source
           options:
-            - label: Zigbee2MQTT
-              value: zigbee2mqtt
-            - label: ZHA
-              value: zha
-            - label: Z-Wave JS
-              value: zwave_js
+            - zigbee2mqtt
+            - zha
+            - zwave_js
+
+list_backups:
+  fields:
+    source:
+      required: false
+      selector:
+        select:
+          translation_key: source
+          options:
+            - zigbee2mqtt
+            - zha
+            - zwave_js
 
 restore:
   fields:
@@ -18,25 +28,28 @@ restore:
       required: true
       selector:
         select:
+          translation_key: source
           options:
-            - label: Zigbee2MQTT
-              value: zigbee2mqtt
-            - label: ZHA
-              value: zha
-            - label: Z-Wave JS
-              value: zwave_js
+            - zigbee2mqtt
+            - zha
+            - zwave_js
     file:
       required: false
       example: "20261107T031700Z.nvm"
       selector:
         text:
-    confirm:
+    mode:
       required: false
-      default: false
+      default: dry_run
       selector:
-        boolean:
+        select:
+          translation_key: mode
+          options:
+            - dry_run
+            - restore
     force:
       required: false
       default: false
+      advanced: true
       selector:
         boolean:

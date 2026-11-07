@@ -11,3 +11,18 @@
 [2026-11-07 16:11:42,519] :: INFO - Listener 'default': 1/∞ connections acquired
 [2026-11-07 16:16:06,510] :: INFO - Listener 'default': 2/∞ connections acquired
 [2026-11-07 16:16:06,511] :: INFO - Connection from 127.0.0.1:45471 on listener 'default'
+[2026-11-07 16:28:09,051] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:28:12,522] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:28:12,522] :: INFO - Connection from 127.0.0.1:42007 on listener 'default'
+[2026-11-07 16:29:36,249] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:29:39,840] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:29:39,840] :: INFO - Connection from 127.0.0.1:44283 on listener 'default'
+[2026-11-07 16:30:20,996] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:30:22,061] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:30:22,061] :: INFO - Connection from 127.0.0.1:53527 on listener 'default'
+[2026-11-07 16:30:25,296] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:30:28,983] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:30:28,984] :: INFO - Connection from 127.0.0.1:41777 on listener 'default'
+[2026-11-07 16:31:17,937] :: INFO - Listener 'default': 1/∞ connections acquired
+[2026-11-07 16:31:21,637] :: INFO - Listener 'default': 2/∞ connections acquired
+[2026-11-07 16:31:21,638] :: INFO - Connection from 127.0.0.1:55357 on listener 'default'

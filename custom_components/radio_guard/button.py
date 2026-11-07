@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -19,6 +20,8 @@ async def async_setup_entry(
 
 
 class BackupNowButton(RadioGuardEntity, ButtonEntity):
+    _attr_entity_category = EntityCategory.CONFIG
+
     def __init__(self, coord, sid) -> None:
         super().__init__(coord, sid, "backup_now")
 

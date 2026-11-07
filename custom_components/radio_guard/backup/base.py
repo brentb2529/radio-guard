@@ -19,6 +19,15 @@ class SourceUnavailable(Exception):
     """The upstream integration is not loaded or not reachable."""
 
 
+class RestoreStaged(Exception):
+    """The restore could not be completed automatically; files are staged for manual steps."""
+
+    def __init__(self, path: str, steps: str) -> None:
+        super().__init__(f"Restore files staged in {path}. {steps}")
+        self.path = path
+        self.steps = steps
+
+
 @dataclass
 class BackupPayload:
     """Raw backup bytes plus metadata worth keeping next to them."""

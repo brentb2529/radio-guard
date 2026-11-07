@@ -1,21 +1,17 @@
-"""Sensors: last backup, backup age, backup count, coordinator identity."""
+"""Sensors: last backup, next backup, stored backups, coordinator identity."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-    SensorStateClass,
-)
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RadioGuardConfigEntry
+from .coordinator import device_count_of
 from .entity import RadioGuardEntity
 
 
@@ -27,16 +23,15 @@ async def async_setup_entry(
     for sid in coord.states:
         entities += [
             LastBackupSensor(coord, sid),
-            BackupAgeSensor(coord, sid),
-            BackupCountSensor(coord, sid),
+            NextBackupSensor(coord, sid),
+            StoredBackupsSensor(coord, sid),
             IdentitySensor(coord, sid),
-            LastErrorSensor(coord, sid),
         ]
     async_add_entities(entities)
 
 
 class LastBackupSensor(RadioGuardEntity, SensorEntity):
-    entity_description = SensorEntityDescription(key="last_backup", device_class=SensorDeviceClass.TIMESTAMP)
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
 
     def __init__(self, coord, sid) -> None:
         super().__init__(coord, sid, "last_backup")
@@ -51,49 +46,57 @@ class LastBackupSensor(RadioGuardEntity, SensorEntity):
         rec = self.state_obj.latest
         if not rec:
             return {}
+        skip = {"members", "security_keys"}
         return {
             "file": str(rec.path),
             "size": rec.size,
-            **{k: v for k, v in rec.meta.items() if k != "members"},
+            **{k: v for k, v in rec.meta.items() if k not in skip},
         }
 
 
-class BackupAgeSensor(RadioGuardEntity, SensorEntity):
-    entity_description = SensorEntityDescription(
-        key="backup_age",
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=1,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    )
+class NextBackupSensor(RadioGuardEntity, SensorEntity):
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coord, sid) -> None:
-        super().__init__(coord, sid, "backup_age")
+        super().__init__(coord, sid, "next_backup")
 
     @property
-    def native_value(self) -> float | None:
-        return self.state_obj.age_hours
+    def native_value(self) -> datetime:
+        return self.coordinator.next_backup
 
 
-class BackupCountSensor(RadioGuardEntity, SensorEntity):
-    entity_description = SensorEntityDescription(
-        key="backup_count",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    )
+class StoredBackupsSensor(RadioGuardEntity, SensorEntity):
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = None
 
     def __init__(self, coord, sid) -> None:
-        super().__init__(coord, sid, "backup_count")
+        super().__init__(coord, sid, "stored_backups")
 
     @property
     def native_value(self) -> int:
         return self.state_obj.count
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "backups": [
+                {
+                    "file": r.name,
+                    "created": r.created.isoformat(),
+                    "devices": device_count_of(r.meta),
+                    "identity": r.meta.get("ieee") or r.meta.get("home_id_hex") or r.meta.get("home_id"),
+                    "label": r.meta.get("label"),
+                }
+                for r in self.state_obj.records
+            ]
+        }
+
 
 class IdentitySensor(RadioGuardEntity, SensorEntity):
     """IEEE (Zigbee) or home ID (Z-Wave) of the live coordinator."""
 
-    entity_description = SensorEntityDescription(key="identity", entity_category=EntityCategory.DIAGNOSTIC)
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coord, sid) -> None:
         super().__init__(coord, sid, "identity")
@@ -101,21 +104,15 @@ class IdentitySensor(RadioGuardEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         ident = self.state_obj.identity
-        val = ident.get("ieee") or ident.get("home_id")
+        val = ident.get("ieee") or ident.get("home_id_hex") or ident.get("home_id")
         return str(val) if val is not None else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return dict(self.state_obj.identity)
-
-
-class LastErrorSensor(RadioGuardEntity, SensorEntity):
-    entity_description = SensorEntityDescription(key="last_error", entity_category=EntityCategory.DIAGNOSTIC)
-
-    def __init__(self, coord, sid) -> None:
-        super().__init__(coord, sid, "last_error")
-
-    @property
-    def native_value(self) -> str:
-        err = self.state_obj.last_error
-        return err[:250] if err else "none"
+        ident = {k: v for k, v in self.state_obj.identity.items() if v is not None}
+        ident["matches_latest_backup"] = (
+            not self.state_obj.coordinator_replaced
+            if self.state_obj.latest and self.state_obj.identity
+            else None
+        )
+        return ident

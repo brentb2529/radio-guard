@@ -2,19 +2,14 @@
   "config": {
     "step": {
       "user": {
-        "title": "Radio Guard",
-        "description": "Scheduled backups of your Zigbee and Z-Wave coordinators, stored under your Home Assistant config directory so they ride along in HA's own backups.",
+        "title": "Which coordinators should Radio Guard protect?",
+        "description": "Detected: {detected}. Backups run nightly and are stored under /config/{backup_dir}/, so they are included in Home Assistant's own backups. Schedule, retention and the watchdog heartbeat can be changed later under Configure.",
         "data": {
-          "sources": "Coordinators to back up",
-          "z2m_base_topic": "Zigbee2MQTT base topic",
-          "backup_hour": "Backup hour (0-23)",
-          "backup_minute": "Backup minute",
-          "retention": "Backups to keep per source",
-          "stale_hours": "Warn when newest backup is older than (hours)",
-          "backup_dir": "Backup folder (relative to /config)",
-          "heartbeat_enabled": "Publish MQTT heartbeat for an external watchdog",
-          "heartbeat_topic": "Heartbeat topic",
-          "heartbeat_interval": "Heartbeat interval (seconds)"
+          "sources": "Coordinators",
+          "first_backup": "Take a first backup right away"
+        },
+        "data_description": {
+          "sources": "You can add or remove coordinators later under Configure."
         }
       }
     },
@@ -22,24 +17,55 @@
       "no_sources": "Select at least one coordinator."
     },
     "abort": {
-      "already_configured": "Radio Guard is already set up."
+      "already_configured": "Radio Guard is already set up. Use Configure to change it."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Radio Guard options",
+        "title": "Radio Guard",
+        "description": "Changes apply after an automatic reload.",
         "data": {
-          "sources": "Coordinators to back up",
-          "z2m_base_topic": "Zigbee2MQTT base topic",
-          "backup_hour": "Backup hour (0-23)",
-          "backup_minute": "Backup minute",
-          "retention": "Backups to keep per source",
-          "stale_hours": "Warn when newest backup is older than (hours)",
-          "backup_dir": "Backup folder (relative to /config)",
-          "heartbeat_enabled": "Publish MQTT heartbeat for an external watchdog",
-          "heartbeat_topic": "Heartbeat topic",
-          "heartbeat_interval": "Heartbeat interval (seconds)"
+          "sources": "Coordinators"
+        },
+        "sections": {
+          "schedule": {
+            "name": "Schedule, retention and safety",
+            "data": {
+              "backup_time": "Daily backup time",
+              "retention": "Backups to keep per coordinator",
+              "stale_hours": "Warn when newest backup is older than",
+              "max_restore_age_days": "Refuse to restore backups older than"
+            },
+            "data_description": {
+              "backup_time": "Local time. Default 03:17 avoids the 03:00 Home Assistant backup rush.",
+              "max_restore_age_days": "A restore from a very old backup leaves recently added devices orphaned. Force overrides this."
+            }
+          },
+          "zigbee2mqtt": {
+            "name": "Zigbee2MQTT",
+            "data": {
+              "z2m_base_topic": "Base topic"
+            },
+            "data_description": {
+              "z2m_base_topic": "Must match base_topic in Zigbee2MQTT's MQTT settings."
+            }
+          },
+          "storage": {
+            "name": "Storage",
+            "data": {
+              "backup_dir": "Folder under /config"
+            }
+          },
+          "heartbeat": {
+            "name": "Watchdog heartbeat (MQTT)",
+            "description": "Publishes a liveness message an external power watchdog can monitor. Requires the MQTT integration.",
+            "data": {
+              "heartbeat_enabled": "Publish heartbeat",
+              "heartbeat_topic": "Topic",
+              "heartbeat_interval": "Interval"
+            }
+          }
         }
       }
     },
@@ -50,17 +76,33 @@
   "entity": {
     "sensor": {
       "last_backup": { "name": "Last backup" },
-      "backup_age": { "name": "Backup age" },
-      "backup_count": { "name": "Stored backups" },
-      "identity": { "name": "Coordinator identity" },
-      "last_error": { "name": "Last error" }
+      "next_backup": { "name": "Next backup" },
+      "stored_backups": { "name": "Stored backups" },
+      "identity": { "name": "Coordinator identity" }
     },
     "binary_sensor": {
-      "backup_stale": { "name": "Backup stale" },
-      "source_available": { "name": "Source available" }
+      "backup_stale": { "name": "Backup problem" },
+      "coordinator_replaced": { "name": "Coordinator replaced" },
+      "source_loaded": { "name": "Integration loaded" },
+      "backup_running": { "name": "Backup running" }
     },
     "button": {
       "backup_now": { "name": "Back up now" }
+    }
+  },
+  "selector": {
+    "source": {
+      "options": {
+        "zigbee2mqtt": "Zigbee2MQTT",
+        "zha": "ZHA",
+        "zwave_js": "Z-Wave JS"
+      }
+    },
+    "mode": {
+      "options": {
+        "dry_run": "Dry run (check only)",
+        "restore": "Restore"
+      }
     }
   },
   "services": {
@@ -71,25 +113,105 @@
         "source": { "name": "Source", "description": "Which coordinator to back up." }
       }
     },
+    "list_backups": {
+      "name": "List backups",
+      "description": "Return the stored backups per coordinator, newest first.",
+      "fields": {
+        "source": { "name": "Source", "description": "Limit to one coordinator." }
+      }
+    },
     "restore": {
       "name": "Restore",
-      "description": "Write a stored backup to the attached coordinator. Without confirm it only runs the pre-flight check and reports what would happen.",
+      "description": "Overwrites the attached coordinator with a stored network backup. Dry run by default: reports what would happen and raises a notification without changing anything.",
       "fields": {
         "source": { "name": "Source", "description": "Which coordinator to restore." },
-        "file": { "name": "Backup file", "description": "Filename or path of the backup. Defaults to the newest." },
-        "confirm": { "name": "Confirm", "description": "Actually perform the restore. Leave off for a dry run." },
-        "force": { "name": "Force", "description": "Proceed even if the pre-flight check reports a problem." }
+        "file": { "name": "Backup file", "description": "File name from list_backups. Defaults to the newest." },
+        "mode": { "name": "Mode", "description": "Dry run only checks; restore performs it." },
+        "force": { "name": "Force", "description": "Proceed even if the pre-flight reports a blocking problem. For Silicon Labs radios this also permits a one-time IEEE overwrite." }
       }
     }
+  },
+  "exceptions": {
+    "not_set_up": { "message": "Radio Guard is not set up." },
+    "source_not_enabled": { "message": "{source} is not enabled in Radio Guard. Add it under Configure." },
+    "backup_failed": { "message": "{source} backup failed: {error}" },
+    "restore_failed": { "message": "{source} restore failed: {error}" },
+    "no_backup": { "message": "No {source} backup matching {file}." }
   },
   "issues": {
     "backup_failed": {
       "title": "{source} backup failed",
-      "description": "The most recent {source} coordinator backup failed: {error}. Check the logs and the upstream integration, then press the Back up now button."
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Retry {source} backup",
+            "description": "The most recent backup failed. Submit to try again now."
+          }
+        },
+        "abort": {
+          "backup_failed": "Backup failed again: {error}"
+        }
+      }
     },
     "backup_stale": {
-      "title": "{source} backup is stale",
-      "description": "The newest {source} coordinator backup is {age} old. If the coordinator fails, the restore will be that far out of date. Press Back up now, or check why the schedule is not running."
+      "title": "{source} backup is {age} hours old",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Back up {source} now",
+            "description": "The newest backup is older than your threshold. If the coordinator fails, the restore will be that far out of date. Submit to back up now."
+          }
+        },
+        "abort": {
+          "backup_failed": "Backup failed: {error}"
+        }
+      }
+    },
+    "backup_never": {
+      "title": "{source} has never been backed up",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Take the first {source} backup",
+            "description": "Radio Guard has no backup for this coordinator yet. Submit to take one now."
+          }
+        },
+        "abort": {
+          "backup_failed": "Backup failed: {error}"
+        }
+      }
+    },
+    "coordinator_replaced": {
+      "title": "{source}: coordinator changed, restore available",
+      "fix_flow": {
+        "step": {
+          "pick": {
+            "title": "Restore the {source} network",
+            "description": "The attached coordinator does not match your newest backup. {count} stored backups, newest first. Pick the one taken before the old coordinator failed.",
+            "data": { "file": "Backup" }
+          },
+          "preflight": {
+            "title": "Pre-flight check",
+            "description": "**Backup** `{file}`\nNetwork {backup_identity}, {backup_devices} devices, {backup_age} h old\n\n**Attached coordinator** {current_identity}\n\n**Status:** {status}\n\n**Before you continue**\n{warnings}",
+            "data": { "acknowledge": "The old coordinator is unplugged for good and I have read the above" }
+          },
+          "confirm": {
+            "title": "Type RESTORE to continue",
+            "description": "This overwrites the attached {source} coordinator. It cannot be undone from here.",
+            "data": { "typed": "Confirmation" }
+          }
+        },
+        "error": {
+          "preflight_failed": "Pre-flight found a blocking problem. Continuing will force the restore.",
+          "type_restore": "Type RESTORE in capitals."
+        },
+        "abort": {
+          "no_backups": "There are no stored {source} backups to restore.",
+          "preflight_error": "Could not read the backup or the coordinator: {error}",
+          "restore_failed": "Restore failed: {error}. Check the logs; nothing further was changed.",
+          "restore_staged": "Almost there. Radio Guard staged the files in `{path}`. {steps}"
+        }
+      }
     }
   }
 }

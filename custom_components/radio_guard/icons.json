@@ -1,0 +1,22 @@
+{
+  "entity": {
+    "sensor": {
+      "last_backup": { "default": "mdi:content-save-check" },
+      "next_backup": { "default": "mdi:calendar-clock" },
+      "stored_backups": { "default": "mdi:archive-outline" },
+      "identity": { "default": "mdi:fingerprint" }
+    },
+    "binary_sensor": {
+      "coordinator_replaced": { "default": "mdi:swap-horizontal", "state": { "on": "mdi:swap-horizontal-bold" } },
+      "backup_running": { "default": "mdi:progress-upload" }
+    },
+    "button": {
+      "backup_now": { "default": "mdi:content-save-plus" }
+    }
+  },
+  "services": {
+    "backup_now": { "service": "mdi:content-save-plus" },
+    "list_backups": { "service": "mdi:format-list-bulleted" },
+    "restore": { "service": "mdi:backup-restore" }
+  }
+}
