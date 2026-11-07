@@ -18,7 +18,7 @@ backups, easy to use on failure day. Rock-solid over feature-rich. HA minimum **
 - Keep `strings.json` and `translations/en.json` identical (CI diffs them).
 - `ruff check custom_components tests` must pass; `ruff format` applied.
 
-## Status (as of 2026-11-07 ~16:30 ET)
+## Status (as of 2026-11-07 ~17:15 ET; see TODO 2/3 for dev-instance and test results)
 
 Verified on a live HA **2026.2.3** instance in a cloud workspace against a fake Z2M bridge
 (`smoke/fake_z2m.py`) and an `amqtt` broker:
@@ -116,14 +116,21 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
 
 1. **Push to GitHub** `brentb2529/radio-guard` (public, no README init), fix `codeowners`/URLs if the
    name differs. Tag `v0.1.0` after first dev-instance validation; manifest `version` must match.
-2. **Deploy to dev 192.168.1.196** via HACS custom repository (or copy `custom_components/radio_guard`
-   into its `/config/custom_components/`), restart, add the integration, confirm first backup,
-   check Repairs/entities, run `restore` dry run for each source present. Record which of
-   Z2M / ZHA / Z-Wave JS the instance runs. Read the add-on `data_path` finding above before any
-   real Z2M restore.
-3. **Tests**: `tests/` has storage + Z2M coverage from a subagent; needs ZHA, Z-Wave, coordinator
-   (scheduled skip on coordinator_replaced, first backup flag preserved across options save),
-   config/options flow, repairs flows, services. Wire `pytest -q` in CI once green.
+2. **Dev instance (192.168.1.196, Mac mini) — done for Z2M (2026-11-07).** The dev HA is the Docker Core
+   container `bensten-dev-ha` (HA 2026.10.2, no Supervisor, colima, no USB) with config in
+   `../dev-ha/config`; it has **no real radios** (prod devices are `prod_mirror` fakes). Radio Guard is
+   bind-mounted from this repo (`../dev-ha/docker-compose.yml` + symlink in `config/custom_components/`),
+   MQTT entry -> `host.docker.internal:1883` = `smoke/broker.yaml` amqtt on the Mac's 127.0.0.1, fed by
+   `smoke/fake_z2m.py`. Neither process survives a reboot; restart both from `smoke/`. Verified there:
+   first backup + notification, entities, Repairs (replaced stick via FAKE_IEEE/FAKE_EPID -> guided flow to
+   the RESTORE step, aborted), `restore` dry run BLOCKED (same stick) / OK (replaced). Still open: ZHA and
+   Z-Wave JS on real network adapters, Z2M add-on path (needs a Supervisor install), a real restore.
+3. **Tests — done (332 passing, no xfails).** Open items they surfaced: real `homeassistant.components.zha`
+   can't import in the venv (`aiousbwatcher` missing) so ZHA tests use fake modules; ZHA `restore_backup`
+   silently no-ops if the radio's settings `supersedes(backup)`, so `force` may "succeed" without writing
+   (check on hardware); a blocked pre-flight can be forced from the Repairs UI (intended? decide);
+   a failed `pre_restore_*` snapshot leaves a `backup_failed` issue; the first backup's options update
+   reloads the entry once.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
    does NOT do", FAQ, screenshots under `docs/img/`.
