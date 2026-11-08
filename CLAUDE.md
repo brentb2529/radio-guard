@@ -129,15 +129,25 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      (zwave-js mock controller, mDNS disabled) + `zws.sh start <port>` (zwave-js-server on 127.0.0.1:3001,
      `--disable-dns-sd`); HA Z-Wave JS entry -> `ws://host.docker.internal:3001`. The mock has NO NVM and
      reports SDK 7.17.99, so backup/restore can't complete there (pre-flight correctly refuses).
-   - HA OS VM: `../haos-vm/vm.sh start|stop|status` (HAOS 18.4 aarch64, QEMU+HVF, user-mode net, HA on
-     http://localhost:8124 only; Mac loopback = 10.0.2.2 inside). First boot was still on the "Preparing"
-     landing page after 30 min (its redirect drops the forwarded port). Onboarding needs the user. Purpose:
-     Z-Wave JS add-on path (device tcp://10.0.2.2:<stick>) and, with real SLZB-06 adapters, the Z2M add-on.
+   - HA OS VM (`../haos-vm`, not a repo): `vm.sh start|stop|status`, HAOS 18.4 aarch64 / HA 2026.10 on
+     QEMU+HVF. **Isolated** (`restrict=on`): no LAN, no internet (it saw the LAN via mDNS/SSDP before;
+     never run it unrestricted). HA at http://localhost:8180 (HAOS 18 serves HA on port 80; 8123
+     redirects there). Inside, only 10.0.2.100:5555/5556 (simulated Z-Wave sticks A/B) and :1883 (test
+     MQTT) reach the Mac. Test owner `radioguard-test` + API token in `../haos-vm/.owner_login` (0600).
+     `push.sh` copies `custom_components/radio_guard` in over SSH (Terminal & SSH add-on, key `vm_key`,
+     port 2222) and restarts Core; `sup.py <method> <endpoint> [json]` calls the Supervisor API.
+     Z-Wave JS **add-on** runs there on `socket: tcp://10.0.2.100:<stick>`.
+   - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
+     (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
    2/2+1/1; migrate B->C -> devices -> rollback to B. Z-Wave JS (external server): down Repair at the
    predicted time, wizard swap -> found new stick -> pre-flight refused SDK 7.17.99 with a clear message.
-   **Not verified:** any real hardware; Z2M/Z-Wave add-on paths; ZHA live (unit tests only); Z-Wave NVM.
-3. **Tests: 542 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
+   Z-Wave JS **add-on** on HA OS (VM): stick probe detected a dead network stick that HA still showed as
+   loaded; wizard unloaded Z-Wave JS, stopped the add-on, switched `socket` to stick B, started it, set the
+   integration up on B, pre-flight refused SDK 7.17.99. Only the NVM write itself is untested.
+   **Not verified:** real hardware; Z2M add-on (needs a real adapter, e.g. SLZB-06 in the VM); ZHA live
+   (unit tests only); Z-Wave NVM write.
+3. **Tests: 553 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
    does NOT do", FAQ, screenshots under `docs/img/`.
