@@ -5,6 +5,7 @@
     "hassio",
     "mqtt",
     "usb",
+    "zeroconf",
     "zha",
     "zwave_js"
   ],
