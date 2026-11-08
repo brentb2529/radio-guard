@@ -375,6 +375,34 @@ async def test_swap_set_port_updates_addon_device_only(hass: HomeAssistant, sour
     )
 
 
+@pytest.mark.parametrize(
+    ("before", "port", "after"),
+    [
+        ({"socket": "tcp://10.0.2.2:5555"}, "tcp://10.0.2.2:5556", {"socket": "tcp://10.0.2.2:5556"}),
+        ({"device": OLD_PORT}, "tcp://192.168.1.60:6638", {"socket": "tcp://192.168.1.60:6638"}),
+        ({"socket": "tcp://10.0.2.2:5555"}, NEW_PORT, {"device": NEW_PORT}),
+    ],
+    ids=["network-to-network", "usb-to-network", "network-to-usb"],
+)
+async def test_swap_set_port_network_sticks_use_socket_option(
+    hass: HomeAssistant, source: ZWaveJSSource, before: dict, port: str, after: dict
+) -> None:
+    """The add-on keeps network sticks in 'socket' and serial ones in 'device'; never both."""
+    zw_entry(hass, data=addon_data())
+    mgr = addon_mgr({**before, "log_level": "info"})
+    with patch(IS_HASSIO, return_value=True), patch.object(source, "_addon_manager", return_value=mgr):
+        await source.async_swap_set_port(port)
+    mgr.async_set_addon_options.assert_awaited_once_with({**after, "log_level": "info"})
+
+
+async def test_swap_plan_addon_reads_socket_option(hass: HomeAssistant, source: ZWaveJSSource) -> None:
+    zw_entry(hass, data=addon_data())
+    mgr = addon_mgr({"socket": "tcp://10.0.2.2:5555"})
+    with patch(IS_HASSIO, return_value=True), patch.object(source, "_addon_manager", return_value=mgr):
+        plan = await source.async_swap_plan()
+    assert plan.current_port == "tcp://10.0.2.2:5555"
+
+
 async def test_swap_set_port_with_empty_addon_options(hass: HomeAssistant, source: ZWaveJSSource) -> None:
     zw_entry(hass, data=addon_data())
     mgr = addon_mgr(None)

@@ -353,10 +353,11 @@ class ZWaveJSSource(BackupSource):
         if entry is None:
             return SwapPlan(supported=False, reason="The Z-Wave JS integration is not set up.")
         if self._uses_addon():
-            port = entry.data.get("usb_path")
+            port = entry.data.get("usb_path") or entry.data.get("socket_path")
             try:
                 info = await self._addon_manager().async_get_addon_info()
-                port = (info.options or {}).get("device") or port
+                opts = info.options or {}
+                port = opts.get("device") or opts.get("socket") or port
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("Could not read Z-Wave JS add-on options", exc_info=True)
             return SwapPlan(
@@ -404,7 +405,15 @@ class ZWaveJSSource(BackupSource):
             return
         mgr = self._addon_manager()
         info = await mgr.async_get_addon_info()
-        await mgr.async_set_addon_options({**(info.options or {}), "device": port})
+        options = dict(info.options or {})
+        # Network sticks (tcp://, esphome://) go in "socket", serial ones in "device"; never both.
+        if "://" in port:
+            options["socket"] = port
+            options.pop("device", None)
+        else:
+            options["device"] = port
+            options.pop("socket", None)
+        await mgr.async_set_addon_options(options)
 
     async def _wait_driver(self, timeout: float | None, not_home_id: int | None = None) -> Any:
         """Wait until the integration is loaded with a ready driver (optionally on a different controller)."""
