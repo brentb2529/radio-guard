@@ -294,7 +294,8 @@ async def test_swap_plan_addon(hass: HomeAssistant, source: ZWaveJSSource) -> No
     assert plan.supported and plan.automatic and plan.choose_port
     assert plan.stop_first is True
     assert plan.current_port == NEW_PORT  # the add-on's option wins over entry.data usb_path
-    assert plan.details == {"addon": ZWAVE_ADDON_SLUG}
+    assert plan.details["addon"] == ZWAVE_ADDON_SLUG
+    assert "unknown adapter" in plan.details["note"]
     assert plan.plug_in is None  # the wizard's standard text (USB list + network address)
     cls.assert_called_once_with(hass, zwave_mod._LOGGER, "Z-Wave JS", ZWAVE_ADDON_SLUG)
 

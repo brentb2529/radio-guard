@@ -394,7 +394,11 @@ class ZWaveJSSource(BackupSource):
                 automatic=True,
                 choose_port=True,
                 current_port=port,
-                details={"addon": ZWAVE_ADDON_SLUG},
+                details={
+                    "addon": ZWAVE_ADDON_SLUG,
+                    "note": "If Z-Wave JS shows *An unknown adapter was detected*, leave it until the "
+                    "replacement has finished: Radio Guard updates it when the restore succeeds.",
+                },
             )
         return SwapPlan(
             supported=True,

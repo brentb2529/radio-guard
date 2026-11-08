@@ -113,6 +113,7 @@ class ReplaceWizardMixin:
     _report: DeviceReport | None = None
     _extra_meta: dict[str, Any] | None = None
     _confirm: ConfirmationNeeded | None = None
+    _applied: bool = False  # the new coordinator has been put in place (port switched / files written)
 
     # ------------------------------------------------------------ helpers
 
@@ -451,6 +452,7 @@ class ReplaceWizardMixin:
         )
 
     async def _apply(self) -> None:
+        self._applied = True
         st = self._st
         data = await self.hass.async_add_executor_job(st.store.read, self._record)
         await st.source.async_swap_apply(data, {**self._record.meta, **(self._extra_meta or {})}, self._port)
@@ -630,7 +632,13 @@ class ReplaceWizardMixin:
 
     def _failure_ph(self) -> dict[str, str]:
         details = self._plan.details if self._plan else {}
-        after = details.get("after_failure") or f"Radio Guard put {self._st.source.name} back the way it was."
+        name = self._st.source.name
+        if details.get("after_failure"):
+            after = details["after_failure"]
+        elif self._applied and self._mode == MODE_REPLACE:
+            after = f"{name} is now set up for the new coordinator, but your network was not written to it."
+        else:
+            after = f"Radio Guard put {name} back the way it was."
         note = details.get("note", "")
         return self._ph(error=self._error or "", after=f"{after} {note}".strip())
 
