@@ -295,7 +295,7 @@ async def test_swap_plan_addon(hass: HomeAssistant, source: ZWaveJSSource) -> No
     assert plan.stop_first is True
     assert plan.current_port == NEW_PORT  # the add-on's option wins over entry.data usb_path
     assert plan.details == {"addon": ZWAVE_ADDON_SLUG}
-    assert "just plugged in" in plan.plug_in
+    assert plan.plug_in is None  # the wizard's standard text (USB list + network address)
     cls.assert_called_once_with(hass, zwave_mod._LOGGER, "Z-Wave JS", ZWAVE_ADDON_SLUG)
 
 
@@ -361,6 +361,46 @@ async def test_swap_stop_addon_plan_stops_addon_and_snapshots_once(
     assert scanner.call_count == 1
     assert source._ports_before == {OLD_PORT}
     assert mgr.async_stop_addon.await_count == 2
+
+
+async def test_swap_stop_addon_unloads_integration_before_stopping(
+    hass: HomeAssistant, source: ZWaveJSSource
+) -> None:
+    """HA's Z-Wave JS integration restarts its add-on while retrying: unload it first (seen on HA OS)."""
+    entry = zw_entry(hass, data=addon_data(), state=ConfigEntryState.SETUP_RETRY, runtime=None)
+    order: list[str] = []
+    mgr = addon_mgr()
+    mgr.async_stop_addon.side_effect = lambda: order.append("stop_addon")
+
+    async def unload(entry_id: str) -> bool:
+        order.append("unload")
+        return True
+
+    plan = SwapPlan(supported=True, automatic=True, choose_port=True, details={"addon": ZWAVE_ADDON_SLUG})
+    with (
+        patch(SERIAL_PORTS, return_value=[]),
+        patch.object(source, "_addon_manager", return_value=mgr),
+        patch.object(hass.config_entries, "async_unload", side_effect=unload) as unl,
+    ):
+        await source.async_swap_stop(plan)
+    assert order == ["unload", "stop_addon"]
+    unl.assert_awaited_once_with(entry.entry_id)
+
+
+async def test_swap_stop_addon_refused_unload_stops_nothing(
+    hass: HomeAssistant, source: ZWaveJSSource
+) -> None:
+    zw_entry(hass, data=addon_data())
+    mgr = addon_mgr()
+    plan = SwapPlan(supported=True, automatic=True, choose_port=True, details={"addon": ZWAVE_ADDON_SLUG})
+    with (
+        patch(SERIAL_PORTS, return_value=[]),
+        patch.object(source, "_addon_manager", return_value=mgr),
+        patch.object(hass.config_entries, "async_unload", AsyncMock(return_value=False)),
+        pytest.raises(RuntimeError, match="could not stop Z-Wave JS"),
+    ):
+        await source.async_swap_stop(plan)
+    mgr.async_stop_addon.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

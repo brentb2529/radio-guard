@@ -40,6 +40,7 @@ ZWAVE_DOMAIN = "zwave_js"
 ZWAVE_ADDON_SLUG = "core_zwave_js"
 DRIVER_TIMEOUT = 300
 PROBE_TIMEOUT = 15
+SETTLE_TIMEOUT = 90
 PING_TIMEOUT = 20
 
 # Keys as the Z-Wave JS integration stores them in entry.data for add-on users.
@@ -393,10 +394,6 @@ class ZWaveJSSource(BackupSource):
                 automatic=True,
                 choose_port=True,
                 current_port=port,
-                plug_in=(
-                    "A USB stick shows up under *New coordinator* a few seconds after you plug it in "
-                    "(marked *just plugged in*)."
-                ),
                 details={"addon": ZWAVE_ADDON_SLUG},
             )
         return SwapPlan(
@@ -422,8 +419,31 @@ class ZWaveJSSource(BackupSource):
     async def async_swap_stop(self, plan: SwapPlan) -> None:
         await self.async_snapshot_ports()
         if plan.automatic and plan.details.get("addon"):
+            # HA's Z-Wave JS integration restarts its add-on while it retries, so unload the
+            # integration first, then stop the add-on; both come back in async_swap_apply/start.
+            await self._unload_entry()
             _LOGGER.warning("Stopping the Z-Wave JS add-on to replace the controller")
             await self._addon_manager().async_stop_addon()
+
+    async def _unload_entry(self) -> None:
+        entry = self._any_entry()
+        if entry is None:
+            return
+        busy = (ConfigEntryState.SETUP_IN_PROGRESS, ConfigEntryState.UNLOAD_IN_PROGRESS)
+        deadline = asyncio.get_running_loop().time() + SETTLE_TIMEOUT
+        while entry.state in busy and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(1)
+        if entry.state in busy:
+            raise RuntimeError("Z-Wave JS is still busy starting up. Wait a minute and try again.")
+        if entry.state is not ConfigEntryState.NOT_LOADED and not await self.hass.config_entries.async_unload(
+            entry.entry_id
+        ):
+            raise RuntimeError("Home Assistant could not stop Z-Wave JS, so nothing was changed. Try again.")
+
+    async def _setup_entry(self) -> None:
+        entry = self._any_entry()
+        if entry is not None and entry.state is ConfigEntryState.NOT_LOADED:
+            await self.hass.config_entries.async_setup(entry.entry_id)
 
     async def async_wait_stopped(self, timeout: float | None) -> None:
         return None
@@ -452,6 +472,8 @@ class ZWaveJSSource(BackupSource):
                 if entry is not None and entry.state is ConfigEntryState.SETUP_RETRY:
                     # Don't sit out HA's retry backoff: try again now that the hardware changed.
                     self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                elif entry is not None and entry.state is ConfigEntryState.NOT_LOADED:
+                    await self.hass.config_entries.async_setup(entry.entry_id)
                 if entry is not None and entry.state is ConfigEntryState.LOADED:
                     with suppress(SourceUnavailable):
                         client = self._client(entry)
@@ -468,6 +490,7 @@ class ZWaveJSSource(BackupSource):
         if self._uses_addon():
             await self.async_swap_set_port(port)
             await self._addon_manager().async_start_addon()
+            await self._setup_entry()
         # Wait for a controller that is NOT the backed-up network: the new stick. The old (or the
         # previous, still-cached) controller carries the backup's home ID and must never pass as done.
         try:
@@ -488,6 +511,7 @@ class ZWaveJSSource(BackupSource):
             mgr = self._addon_manager()
             with suppress(Exception):
                 await mgr.async_start_addon()
+            await self._setup_entry()
 
     async def async_wait_started(self, timeout: float | None) -> None:
         await self._wait_driver(timeout)
