@@ -365,6 +365,9 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
 
     async def _update_health(self, st: SourceState) -> None:
         """Track how long the coordinator has been *known* down. Unknown never counts as down."""
+        if st.busy:  # never probe a radio mid-backup/restore/swap
+            st.down_since = None
+            return
         try:
             healthy = await st.source.async_health()
         except Exception:  # noqa: BLE001

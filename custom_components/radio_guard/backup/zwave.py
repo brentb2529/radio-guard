@@ -39,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 ZWAVE_DOMAIN = "zwave_js"
 ZWAVE_ADDON_SLUG = "core_zwave_js"
 DRIVER_TIMEOUT = 300
+PROBE_TIMEOUT = 15
 PING_TIMEOUT = 20
 
 # Keys as the Z-Wave JS integration stores them in entry.data for add-on users.
@@ -76,6 +77,7 @@ class ZWaveJSSource(BackupSource):
     def __init__(self, hass: HomeAssistant, home_id: int | None = None) -> None:
         super().__init__(hass)
         self.home_id = home_id  # pin to one controller when several entries exist
+        self._probe_supported = True
 
     # ------------------------------------------------------------ helpers
 
@@ -346,7 +348,33 @@ class ZWaveJSSource(BackupSource):
             return None
         if not getattr(client, "connected", True):
             return False
-        return getattr(client, "driver", None) is not None
+        driver = getattr(client, "driver", None)
+        if driver is None or driver.controller is None:
+            return False
+        return await self._probe(driver.controller)
+
+    async def _probe(self, ctrl) -> bool | None:
+        """Ask the stick itself something cheap and read-only.
+
+        Z-Wave JS keeps the integration loaded when a stick stops answering and, after a failed
+        reopen, may even report the controller ready again. Only a round trip to the stick tells.
+        """
+        from zwave_js_server.const import ControllerStatus  # noqa: PLC0415
+
+        if getattr(ctrl, "status", None) == ControllerStatus.UNRESPONSIVE:
+            return False
+        if not self._probe_supported:
+            return True
+        try:
+            await asyncio.wait_for(ctrl.async_get_rf_region(), PROBE_TIMEOUT)
+        except TimeoutError:
+            return False
+        except Exception as err:  # noqa: BLE001
+            if "not supported" in str(err).lower() or "notsupported" in str(err).lower():
+                self._probe_supported = False  # e.g. 500-series: no RF region API; rely on status only
+                return True
+            return False
+        return True
 
     async def async_swap_plan(self) -> SwapPlan:
         entry = self._any_entry()

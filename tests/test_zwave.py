@@ -58,6 +58,7 @@ class FakeController:
         self.async_is_firmware_update_in_progress = AsyncMock(return_value=False)
         self.async_backup_nvm_raw = AsyncMock(return_value=NVM)
         self.async_restore_nvm = AsyncMock(return_value=None)
+        self.async_get_rf_region = AsyncMock(return_value=1)  # health probe: the stick answers
         for k, v in overrides.items():
             setattr(self, k, v)
 

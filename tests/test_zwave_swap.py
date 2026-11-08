@@ -194,6 +194,55 @@ async def test_health_ok(hass: HomeAssistant, source: ZWaveJSSource, connected) 
     assert await source.async_health() is True
 
 
+async def _health_with(hass: HomeAssistant, source: ZWaveJSSource, **ctrl_attrs: Any) -> bool | None:
+    ctrl = FakeController(home_id=HOME_ID)
+    for k, v in ctrl_attrs.items():
+        setattr(ctrl, k, v)
+    zw_entry(hass, ctrl=ctrl)
+    return await source.async_health()
+
+
+async def test_health_probe_unanswered_is_down(hass: HomeAssistant, source: ZWaveJSSource) -> None:
+    """Z-Wave JS keeps the integration loaded when a stick stops answering; the probe catches it."""
+    assert (
+        await _health_with(
+            hass, source, async_get_rf_region=AsyncMock(side_effect=RuntimeError("ZW0200 no ACK"))
+        )
+        is False
+    )
+
+
+async def test_health_probe_timeout_is_down(hass: HomeAssistant, source: ZWaveJSSource) -> None:
+    async def hang() -> int:
+        await asyncio.sleep(1)
+        return 1
+
+    with patch(f"{ZW_MOD}.PROBE_TIMEOUT", 0.01):
+        assert await _health_with(hass, source, async_get_rf_region=hang) is False
+
+
+async def test_health_unresponsive_controller_is_down(hass: HomeAssistant, source: ZWaveJSSource) -> None:
+    from zwave_js_server.const import ControllerStatus
+
+    probe = AsyncMock(return_value=1)
+    assert (
+        await _health_with(hass, source, status=ControllerStatus.UNRESPONSIVE, async_get_rf_region=probe)
+        is False
+    )
+    probe.assert_not_awaited()
+
+
+async def test_health_probe_not_supported_falls_back_to_status(
+    hass: HomeAssistant, source: ZWaveJSSource
+) -> None:
+    """500-series sticks have no RF-region API: don't call them down, and stop asking."""
+    probe = AsyncMock(side_effect=RuntimeError("Command not supported by this controller"))
+    assert await _health_with(hass, source, async_get_rf_region=probe) is True
+    assert source._probe_supported is False
+    assert await source.async_health() is True
+    assert probe.await_count == 1
+
+
 async def test_health_client_missing_is_unknown(hass: HomeAssistant, source: ZWaveJSSource) -> None:
     zw_entry(hass, runtime=None)
     assert await source.async_health() is None
