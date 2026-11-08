@@ -4,3 +4,6 @@ zha==0.0.90
 zwave-js-server-python==0.68.0
 aiousbwatcher==1.1.1
 pyserial==3.5
+universal-silabs-flasher==0.1.2
+serialx==0.6.2
+ha-silabs-firmware-client==0.3.0

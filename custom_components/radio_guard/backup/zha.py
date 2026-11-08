@@ -39,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 # further than this since the backup, devices drop the coordinator's frames.
 DEFAULT_COUNTER_INCREMENT = 10000
 START_TIMEOUT = 180
+SETTLE_TIMEOUT = 90
 PING_TIMEOUT = 15
 IEEE_KEY = "allow_ieee_overwrite"
 
@@ -264,9 +265,20 @@ class ZHASource(BackupSource):
     async def async_swap_stop(self, plan: SwapPlan) -> None:
         await self.async_snapshot_ports()
         entry = self._any_entry()
-        if entry is not None and entry.state not in (ConfigEntryState.NOT_LOADED,):
-            _LOGGER.warning("Unloading ZHA to replace the coordinator")
-            await self.hass.config_entries.async_unload(entry.entry_id)
+        if entry is None:
+            return
+        # A retry attempt may be probing the dead stick right now; HA refuses to unload mid-attempt.
+        busy = (ConfigEntryState.SETUP_IN_PROGRESS, ConfigEntryState.UNLOAD_IN_PROGRESS)
+        deadline = asyncio.get_running_loop().time() + SETTLE_TIMEOUT
+        while entry.state in busy and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(1)
+        if entry.state in busy:
+            raise RuntimeError("ZHA is still busy starting up. Wait a minute and try again.")
+        if entry.state is ConfigEntryState.NOT_LOADED:
+            return
+        _LOGGER.warning("Unloading ZHA to replace the coordinator")
+        if not await self.hass.config_entries.async_unload(entry.entry_id):
+            raise RuntimeError("Home Assistant could not stop ZHA, so nothing was changed. Try again.")
 
     async def async_wait_stopped(self, timeout: float | None) -> None:
         return None
