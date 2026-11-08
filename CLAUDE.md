@@ -18,7 +18,7 @@ backups, easy to use on failure day. Rock-solid over feature-rich. HA minimum **
 - Keep `strings.json` and `translations/en.json` identical (CI diffs them).
 - `ruff check custom_components tests` must pass; `ruff format` applied.
 
-## Status (as of 2026-11-07 ~17:15 ET; see TODO 2/3 for dev-instance and test results)
+## Status (as of 2026-11-07 ~20:05 ET; v0.1.0 released; see TODO 2/3)
 
 Verified on a live HA **2026.2.3** instance in a cloud workspace against a fake Z2M bridge
 (`smoke/fake_z2m.py`) and an `amqtt` broker:
@@ -118,21 +118,26 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
 
 1. **Push to GitHub** `brentb2529/radio-guard` (public, no README init), fix `codeowners`/URLs if the
    name differs. Tag `v0.1.0` after first dev-instance validation; manifest `version` must match.
-2. **Dev instance (192.168.1.196, Mac mini).** Docker Core container `bensten-dev-ha` (HA 2026.10.2, no
-   Supervisor, no USB), config `../dev-ha/config`, **no real radios** (prod devices are `prod_mirror` fakes;
-   prod itself runs **Z-Wave JS** with 2 nodes, no ZHA/Z2M; Zigbee there is on SmartThings). Radio Guard is
-   bind-mounted from this repo. MQTT -> `host.docker.internal:1883` = `smoke/broker.yaml` amqtt on the Mac.
-   Simulated Z2M: `smoke/z2m.sh start ../dev-ha/config/zigbee2mqtt | stop | status` (ONE instance, pidfile;
-   `pkill -f "python fake_z2m.py"` does NOT match on macOS). Stick = `serial.port tcp://<stick>:6638`.
-   **UI-verified 2026-11-07 (clean run, one Z2M):** failure detection after HA start + 5 min grace, Repair ->
-   replace wizard (Docker path) -> devices 2/2 + 1/1; Configure -> Move to a new coordinator -> devices 2/2 +
-   1/1 -> Go back to the old coordinator. amqtt quirks: no LWT on crash, resends all retained on subscribe.
-   **Not yet verified:** Z2M add-on path (needs Supervisor: plan = HA OS VM on this Mac via QEMU, localhost),
-   real hardware. **Wizard not built yet for ZHA and Z-Wave JS** (they still use the old pick/preflight/RESTORE
-   flow). Next: Z-Wave JS wizard (prod uses it; test with zwave-js-server `--mock-driver`), then ZHA.
-3. **Tests: 418 passing.** Known gaps: ZHA tests use fake modules (`aiousbwatcher` missing); ZHA
-   `restore_backup` no-ops if settings supersede the backup (check on hardware); failed `pre_restore_*`
-   snapshot leaves a `backup_failed` issue.
+2. **Dev environments (Mac mini 192.168.1.196).**
+   - `bensten-dev-ha` (Docker Core HA 2026.10.2, no Supervisor, `../dev-ha/config`, prod clone with fake
+     `prod_mirror` entities; prod itself runs **Z-Wave JS** with 2 nodes, no ZHA/Z2M). Radio Guard is
+     bind-mounted from this repo: **restart the container after code changes** (stale code bit us once).
+   - Simulated Z2M: `smoke/z2m.sh start ../dev-ha/config/zigbee2mqtt | stop | status` (ONE instance;
+     `pkill -f "python fake_z2m.py"` does NOT match on macOS). Stick = `serial.port tcp://<stick>:6638`.
+     MQTT: amqtt on 127.0.0.1:1883 (no LWT on crash, resends all retained on subscribe).
+   - Simulated Z-Wave: scratchpad `zwjs/` (session scratch): `node stick.cjs <port> sticks/<A|B>/stick.cjs`
+     (zwave-js mock controller, mDNS disabled) + `zws.sh start <port>` (zwave-js-server on 127.0.0.1:3001,
+     `--disable-dns-sd`); HA Z-Wave JS entry -> `ws://host.docker.internal:3001`. The mock has NO NVM and
+     reports SDK 7.17.99, so backup/restore can't complete there (pre-flight correctly refuses).
+   - HA OS VM: `../haos-vm/vm.sh start|stop|status` (HAOS 18.4 aarch64, QEMU+HVF, user-mode net, HA on
+     http://localhost:8124 only; Mac loopback = 10.0.2.2 inside). First boot was still on the "Preparing"
+     landing page after 30 min (its redirect drops the forwarded port). Onboarding needs the user. Purpose:
+     Z-Wave JS add-on path (device tcp://10.0.2.2:<stick>) and, with real SLZB-06 adapters, the Z2M add-on.
+   **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
+   2/2+1/1; migrate B->C -> devices -> rollback to B. Z-Wave JS (external server): down Repair at the
+   predicted time, wizard swap -> found new stick -> pre-flight refused SDK 7.17.99 with a clear message.
+   **Not verified:** any real hardware; Z2M/Z-Wave add-on paths; ZHA live (unit tests only); Z-Wave NVM.
+3. **Tests: 542 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
    does NOT do", FAQ, screenshots under `docs/img/`.
