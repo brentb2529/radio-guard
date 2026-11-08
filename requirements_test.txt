@@ -2,3 +2,5 @@ pytest-homeassistant-custom-component==0.13.316
 ruff
 zha==0.0.90
 zwave-js-server-python==0.68.0
+aiousbwatcher==1.1.1
+pyserial==3.5

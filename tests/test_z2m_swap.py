@@ -181,7 +181,7 @@ async def test_swap_plan_nothing_found(hass: HomeAssistant, source: Zigbee2MQTTS
 
 async def test_swap_ports_flags_newly_plugged(hass: HomeAssistant, source: Zigbee2MQTTSource) -> None:
     ports = [("/dev/serial/by-id/old", "Old stick")]
-    target = "custom_components.radio_guard.backup.z2m._serial_ports"
+    target = "custom_components.radio_guard.hardware.serial_ports"
     with patch(target, lambda: list(ports)):
         await source.async_swap_stop(MANUAL)  # not online -> returns at once, records ports
         ports.append(("/dev/serial/by-id/new", "New stick"))
@@ -208,7 +208,7 @@ async def test_swap_stop_automatic_stops_addon_and_waits_offline(
     mgr.async_stop_addon = AsyncMock(side_effect=stop)
     with (
         patch.object(source, "_addon", AsyncMock(return_value=(mgr, None))),
-        patch("custom_components.radio_guard.backup.z2m._serial_ports", list),
+        patch("custom_components.radio_guard.hardware.serial_ports", list),
     ):
         await source.async_swap_stop(AUTO)
     mgr.async_stop_addon.assert_awaited_once()
@@ -223,7 +223,7 @@ async def test_swap_stop_automatic_times_out_if_still_online(
     mgr = _mgr()
     with (
         patch.object(source, "_addon", AsyncMock(return_value=(mgr, None))),
-        patch("custom_components.radio_guard.backup.z2m._serial_ports", list),
+        patch("custom_components.radio_guard.hardware.serial_ports", list),
         pytest.raises(TimeoutError),
     ):
         await source.async_swap_stop(AUTO)
@@ -235,7 +235,7 @@ async def test_swap_stop_manual_waits_for_offline(hass: HomeAssistant, source: Z
     await hass.async_block_till_done()
     with (
         patch.object(source, "_addon", AsyncMock(side_effect=AssertionError("manual never touches add-on"))),
-        patch("custom_components.radio_guard.backup.z2m._serial_ports", list),
+        patch("custom_components.radio_guard.hardware.serial_ports", list),
     ):
         task = hass.async_create_task(source.async_swap_stop(MANUAL))
         for _ in range(5):

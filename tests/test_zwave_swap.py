@@ -40,7 +40,7 @@ from custom_components.radio_guard.coordinator import RadioGuardCoordinator
 from .test_zwave import HOME_ID, KEYS, OTHER_HOME_ID, FakeController
 
 ZW_MOD = "custom_components.radio_guard.backup.zwave"
-SERIAL_PORTS = "custom_components.radio_guard.backup.z2m._serial_ports"
+SERIAL_PORTS = "custom_components.radio_guard.hardware.serial_ports"
 IS_HASSIO = "homeassistant.helpers.hassio.is_hassio"
 ADDON_MANAGER = "homeassistant.components.hassio.AddonManager"
 SERVER_URL = "ws://zwave-js-ui:3000"
@@ -345,7 +345,7 @@ async def test_swap_ports_new_first(hass: HomeAssistant, source: ZWaveJSSource) 
         ("/dev/ttyAMA0", False),
         (OLD_PORT, False),
     ]
-    assert ports[0].label == "ZZZ new stick"
+    assert ports[0].label == "ZZZ new stick (unrecognised device)"
 
 
 async def test_swap_ports_without_snapshot_marks_all_new(hass: HomeAssistant, source: ZWaveJSSource) -> None:

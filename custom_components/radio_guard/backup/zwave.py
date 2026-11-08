@@ -30,7 +30,6 @@ from .base import (
     BackupPayload,
     BackupSource,
     DeviceReport,
-    PortOption,
     RestoreCheck,
     SourceUnavailable,
     SwapPlan,
@@ -72,6 +71,7 @@ class ZWaveJSSource(BackupSource):
 
     id = SOURCE_ZWAVE
     name = SOURCE_NAMES[SOURCE_ZWAVE]
+    tech = "zwave"
 
     def __init__(self, hass: HomeAssistant, home_id: int | None = None) -> None:
         super().__init__(hass)
@@ -383,20 +383,8 @@ class ZWaveJSSource(BackupSource):
             ),
         )
 
-    async def async_swap_ports(self) -> list[PortOption]:
-        from .z2m import _serial_ports  # noqa: PLC0415
-
-        ports = await self.hass.async_add_executor_job(_serial_ports)
-        before = getattr(self, "_ports_before", None) or set()
-        opts = [PortOption(path, label, new=path not in before) for path, label in ports]
-        opts.sort(key=lambda o: (not o.new, o.label))
-        return opts
-
     async def async_swap_stop(self, plan: SwapPlan) -> None:
-        from .z2m import _serial_ports  # noqa: PLC0415
-
-        if getattr(self, "_ports_before", None) is None:
-            self._ports_before = {p for p, _ in await self.hass.async_add_executor_job(_serial_ports)}
+        await self.async_snapshot_ports()
         if plan.automatic and plan.details.get("addon"):
             _LOGGER.warning("Stopping the Z-Wave JS add-on to replace the controller")
             await self._addon_manager().async_stop_addon()

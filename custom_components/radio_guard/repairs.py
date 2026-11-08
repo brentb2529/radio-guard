@@ -12,7 +12,7 @@ from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .backup import RestoreStaged
-from .const import DOMAIN
+from .const import CONF_SOURCES, DOMAIN, SOURCE_NAMES
 from .coordinator import RadioGuardCoordinator, device_count_of
 from .wizard import ReplaceWizardMixin
 
@@ -43,6 +43,35 @@ class BackupNowRepairFlow(ConfirmRepairFlow):
         name = _coordinator(self._hass).states[self.sid].source.name
         return self.async_show_form(
             step_id="confirm", data_schema=vol.Schema({}), description_placeholders={"source": name}
+        )
+
+
+class AddSourceRepairFlow(ConfirmRepairFlow):
+    """A coordinator integration appeared after setup: one click adds it to Radio Guard."""
+
+    def __init__(self, hass: HomeAssistant, sid: str) -> None:
+        super().__init__()
+        self._hass = hass
+        self.sid = sid
+
+    async def async_step_confirm(
+        self, user_input: dict[str, str] | None = None
+    ) -> data_entry_flow.FlowResult:
+        entry = self._hass.config_entries.async_loaded_entries(DOMAIN)[0]
+        if user_input is not None:
+            current = list(entry.options.get(CONF_SOURCES, entry.data.get(CONF_SOURCES, [])))
+            if self.sid not in current:
+                current.append(self.sid)
+            # Saving options reloads Radio Guard, which takes the first backup of the new source tonight
+            # (or right away via Back up now) and clears this issue.
+            self._hass.config_entries.async_update_entry(
+                entry, options={**entry.options, CONF_SOURCES: current}
+            )
+            return self.async_create_entry(title="", data={})
+        return self.async_show_form(
+            step_id="confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={"source": SOURCE_NAMES[self.sid]},
         )
 
 
@@ -228,4 +257,6 @@ async def async_create_fix_flow(
         return RestoreRepairFlow(hass, sid)
     if data.get("action") == "replace":
         return CoordinatorDownRepairFlow(hass, sid)
+    if data.get("action") == "add_source":
+        return AddSourceRepairFlow(hass, sid)
     return BackupNowRepairFlow(hass, sid)

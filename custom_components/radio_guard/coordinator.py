@@ -62,8 +62,10 @@ from .const import (
     ISSUE_BACKUP_STALE,
     ISSUE_COORDINATOR_DOWN,
     ISSUE_COORDINATOR_REPLACED,
+    ISSUE_NEW_SOURCE,
     NOTIFICATION_FIRST_BACKUP,
     PRE_RESTORE_PREFIX,
+    SOURCE_NAMES,
     SOURCE_Z2M,
     SOURCE_ZHA,
     SOURCE_ZWAVE,
@@ -341,7 +343,25 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
             await self._update_health(st)
             st.replaced_seen = st.replaced_seen + 1 if st.coordinator_replaced else 0
             self._update_issues(sid, st)
+        self._suggest_new_sources()
         return self.states
+
+    def _suggest_new_sources(self) -> None:
+        """Offer to protect a ZHA / Z-Wave JS set up after Radio Guard (Z2M can't be told from plain MQTT)."""
+        present = {
+            SOURCE_ZHA: bool(self.hass.config_entries.async_entries("zha")),
+            SOURCE_ZWAVE: bool(self.hass.config_entries.async_entries("zwave_js")),
+        }
+        for sid, found in present.items():
+            _set_issue(
+                self.hass,
+                f"{ISSUE_NEW_SOURCE}_{sid}",
+                found and sid not in self.states,
+                translation_key=ISSUE_NEW_SOURCE,
+                severity=ir.IssueSeverity.WARNING,
+                placeholders={"source": SOURCE_NAMES[sid]},
+                data={"source": sid, "action": "add_source"},
+            )
 
     async def _update_health(self, st: SourceState) -> None:
         """Track how long the coordinator has been *known* down. Unknown never counts as down."""

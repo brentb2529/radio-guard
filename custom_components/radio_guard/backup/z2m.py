@@ -43,7 +43,6 @@ from .base import (
     BackupPayload,
     BackupSource,
     DeviceReport,
-    PortOption,
     RestoreCheck,
     RestoreStaged,
     SourceUnavailable,
@@ -74,6 +73,7 @@ class Zigbee2MQTTSource(BackupSource):
 
     id = SOURCE_Z2M
     name = SOURCE_NAMES[SOURCE_Z2M]
+    tech = "zigbee"
 
     def __init__(self, hass: HomeAssistant, base_topic: str, data_dir: str | None = None) -> None:
         super().__init__(hass)
@@ -538,16 +538,8 @@ class Zigbee2MQTTSource(BackupSource):
             details=details,
         )
 
-    async def async_swap_ports(self) -> list[PortOption]:
-        ports = await self.hass.async_add_executor_job(_serial_ports)
-        before = self._ports_before or set()
-        opts = [PortOption(path, label, new=path not in before) for path, label in ports]
-        opts.sort(key=lambda o: (not o.new, o.label))
-        return opts
-
     async def async_swap_stop(self, plan: SwapPlan) -> None:
-        if self._ports_before is None:  # keep the first snapshot if the user goes back a step
-            self._ports_before = {p for p, _ in await self.hass.async_add_executor_job(_serial_ports)}
+        await self.async_snapshot_ports()  # keeps the first snapshot if the user goes back a step
         if plan.automatic:
             mgr, _ = await self._addon()
             _LOGGER.warning("Stopping Z2M add-on %s to replace the coordinator", mgr.addon_slug)
@@ -711,23 +703,6 @@ class Zigbee2MQTTSource(BackupSource):
         if live_path.exists():
             _atomic_write(live_path.with_suffix(".yaml.radio_guard.bak"), live_path.read_bytes())
         _atomic_write(live_path, yaml.safe_dump(cfg, sort_keys=False).encode())
-
-
-def _serial_ports() -> list[tuple[str, str]]:
-    """(by-id path or device, human label) for every serial port HA can see."""
-    try:
-        from homeassistant.components.usb import get_serial_by_id, human_readable_device_name  # noqa: PLC0415
-        from homeassistant.components.usb.utils import scan_serial_ports  # noqa: PLC0415
-    except ImportError:
-        return []
-    out = []
-    for dev in scan_serial_ports():
-        path = get_serial_by_id(dev.device)
-        label = human_readable_device_name(
-            path, dev.serial_number, dev.manufacturer, dev.description, dev.vid, dev.pid
-        )
-        out.append((path, label))
-    return out
 
 
 def _set_config_port(path: Path, port: str) -> None:

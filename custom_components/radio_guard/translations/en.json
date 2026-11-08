@@ -600,6 +600,17 @@
           "not_loaded": "Radio Guard isn't loaded. Reload it and try again."
         }
       }
+    },
+    "new_source": {
+      "title": "Radio Guard can also protect {source}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Protect {source} too?",
+            "description": "{source} was set up after Radio Guard. Add it, and its coordinator gets nightly backups, failure alerts and the guided replacement like the others."
+          }
+        }
+      }
     }
   }
 }

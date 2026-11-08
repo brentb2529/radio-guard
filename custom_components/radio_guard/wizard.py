@@ -286,7 +286,7 @@ class ReplaceWizardMixin:
     # ---------------------------------------------------------- swap
 
     async def _port_field(self, suggested_current: str | None) -> tuple[dict[Any, Any], bool]:
-        ports = await self._st.source.async_swap_ports()
+        ports = await self._st.source.async_swap_ports(suggested_current)
         options = [
             selector.SelectOptionDict(
                 value=p.value, label=f"{p.label} (just plugged in)" if p.new else p.label

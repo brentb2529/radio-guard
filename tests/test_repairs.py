@@ -11,6 +11,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from homeassistant.components.repairs import repairs_flow_manager
@@ -518,3 +519,30 @@ async def test_restore_no_backups_aborts(hass: HomeAssistant, backup_root: Path,
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "no_backups"
     assert result["description_placeholders"] == {"source": "Zigbee2MQTT"}
+
+
+# ------------------------------------------------------- new source offered
+
+
+async def test_new_zwave_integration_is_offered_and_added(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake: FakeSource
+) -> None:
+    """Z-Wave JS set up after Radio Guard -> one Repair, one click adds it (no forced re-config)."""
+    await setup_rg(hass, mock_config_entry)
+    assert issue(hass, "new_source_zwave_js") is None
+
+    MockConfigEntry(domain="zwave_js", data={"url": "ws://localhost:3000"}).add_to_hass(hass)
+    await mock_config_entry.runtime_data.async_refresh()
+    iss = issue(hass, "new_source_zwave_js")
+    assert iss is not None
+    assert iss.translation_placeholders == {"source": "Z-Wave JS"}
+    assert iss.data == {"source": "zwave_js", "action": "add_source"}
+    assert issue(hass, "new_source_zha") is None  # ZHA isn't set up: nothing to offer
+
+    result = await start_fix(hass, "new_source_zwave_js")
+    assert result["step_id"] == "confirm"
+    with patch("custom_components.radio_guard.coordinator.ZWaveJSSource", lambda hass: FakeSource(hass)):
+        result = await configure(hass, result["flow_id"], {})
+        await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.options[CONF_SOURCES] == [SID, "zwave_js"]

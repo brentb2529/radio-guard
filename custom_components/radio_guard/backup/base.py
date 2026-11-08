@@ -133,8 +133,34 @@ class BackupSource(ABC):
     async def async_swap_plan(self) -> SwapPlan:
         return SwapPlan(supported=False, reason=f"Guided replacement is not available for {self.name} yet.")
 
-    async def async_swap_ports(self) -> list[PortOption]:
-        return []
+    tech: str | None = None  # "zigbee" / "zwave": which hardware the swap step should offer
+
+    async def async_snapshot_ports(self) -> None:
+        """Remember which devices exist before the swap, so the new one can be pre-selected."""
+        if self.tech is None or getattr(self, "_ports_before", None) is not None:
+            return
+        from .. import hardware  # noqa: PLC0415
+
+        self._ports_before = {c.value for c in await hardware.async_find(self.hass, self.tech, network=False)}
+
+    async def async_swap_ports(self, current: str | None = None) -> list[PortOption]:
+        """Candidates for the new coordinator, newly appeared first, labelled in plain words."""
+        if self.tech is None:
+            return []
+        from .. import hardware  # noqa: PLC0415
+
+        before = getattr(self, "_ports_before", None) or set()
+        out = []
+        for c in await hardware.async_find(self.hass, self.tech):
+            new = c.value != current and (c.network or c.value not in before)
+            label = c.label
+            if c.network:
+                label += " (found on your network)"
+            elif c.tech is None:
+                label += " (unrecognised device)"
+            out.append(PortOption(c.value, label, new=new))
+        out.sort(key=lambda o: (not o.new, o.label))
+        return out
 
     async def async_swap_stop(self, plan: SwapPlan) -> None:
         """Stop the owning software (automatic plans) and wait until it is down."""

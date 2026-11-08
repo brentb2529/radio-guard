@@ -154,7 +154,7 @@ class SwapFake(BackupSource):
     async def async_swap_plan(self) -> SwapPlan:
         return self.plan
 
-    async def async_swap_ports(self) -> list[PortOption]:
+    async def async_swap_ports(self, current: str | None = None) -> list[PortOption]:
         return list(self.ports)
 
     async def async_swap_stop(self, plan: SwapPlan) -> None:
