@@ -48,7 +48,7 @@
             },
             "data_description": {
               "backup_time": "Local time. Default 03:17 avoids the 03:00 Home Assistant backup rush.",
-              "max_restore_age_days": "A restore from a very old backup leaves recently added devices orphaned. Force overrides this.",
+              "max_restore_age_days": "A restore from a very old backup leaves recently added devices orphaned. Only the radio_guard.restore action's force option can override this.",
               "offline_minutes": "Counted only after Home Assistant has fully started, so restarts and slow boots never trigger it."
             }
           },
