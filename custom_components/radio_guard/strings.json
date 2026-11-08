@@ -99,7 +99,7 @@
       },
       "wiz_swap": {
         "title": "Swap the coordinator",
-        "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
+        "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\n{current_line}",
         "data": {
           "port": "New coordinator",
           "unplugged": "The old coordinator is unplugged",
@@ -112,7 +112,7 @@
       },
       "wiz_swap_migrate": {
         "title": "Swap the coordinator",
-        "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
+        "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\n{current_line}",
         "data": {
           "port": "New coordinator",
           "unplugged": "The old coordinator is unplugged",
@@ -125,7 +125,7 @@
       },
       "wiz_confirm": {
         "title": "Ready to restore",
-        "description": "**Backup:** {file}, network {network}\n**New coordinator:** `{port}`\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
+        "description": "**Backup:** {file}, network {network}\n**New coordinator:** {target}\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
       },
       "wiz_blocked": {
         "title": "This backup can't be used",
@@ -162,11 +162,19 @@
           "wiz_rollback": "Go back to the old coordinator",
           "wiz_close": "Close and leave things as they are"
         }
+      },
+      "wiz_extra": {
+        "title": "One more question",
+        "description": "{message}",
+        "data": {
+          "agree": "Yes, go ahead"
+        }
       }
     },
     "error": {
       "no_sources": "Select at least one coordinator.",
-      "unplugged_required": "Tick the box once the hardware is swapped."
+      "unplugged_required": "Tick the box once the hardware is swapped.",
+      "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written)."
     },
     "progress": {
       "stopping": "Stopping {source}…",
@@ -183,7 +191,7 @@
       "swap_unsupported": "{reason}",
       "no_backups": "There are no stored {source} backups to restore.",
       "swap_busy": "{error}",
-      "swap_failed": "The {source} replacement did not finish: {error}\n\nRadio Guard put {source} back the way it was. Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
+      "swap_failed": "The {source} replacement did not finish: {error}\n\n{after} Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
       "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
       "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
       "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",
@@ -389,7 +397,7 @@
           },
           "wiz_swap": {
             "title": "Swap the coordinator",
-            "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\n{current_line}",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -402,7 +410,7 @@
           },
           "wiz_swap_migrate": {
             "title": "Swap the coordinator",
-            "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\n{current_line}",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -415,7 +423,7 @@
           },
           "wiz_confirm": {
             "title": "Ready to restore",
-            "description": "**Backup:** {file}, network {network}\n**New coordinator:** `{port}`\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
+            "description": "**Backup:** {file}, network {network}\n**New coordinator:** {target}\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
           },
           "wiz_blocked": {
             "title": "This backup can't be used",
@@ -452,12 +460,20 @@
               "wiz_rollback": "Go back to the old coordinator",
               "wiz_close": "Close and leave things as they are"
             }
+          },
+          "wiz_extra": {
+            "title": "One more question",
+            "description": "{message}",
+            "data": {
+              "agree": "Yes, go ahead"
+            }
           }
         },
         "error": {
           "acknowledge_required": "Tick the box to confirm the old coordinator is unplugged.",
           "type_restore": "Type RESTORE in capitals.",
-          "unplugged_required": "Tick the box once the hardware is swapped."
+          "unplugged_required": "Tick the box once the hardware is swapped.",
+          "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written)."
         },
         "abort": {
           "no_backups": "There are no stored {source} backups to restore.",
@@ -466,7 +482,7 @@
           "restore_staged": "Almost there. Radio Guard staged the files in `{path}`. {steps}",
           "swap_unsupported": "{reason}",
           "swap_busy": "{error}",
-          "swap_failed": "The {source} replacement did not finish: {error}\n\nRadio Guard put {source} back the way it was. Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
+          "swap_failed": "The {source} replacement did not finish: {error}\n\n{after} Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
           "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
           "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
           "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",
@@ -510,7 +526,7 @@
           },
           "wiz_swap": {
             "title": "Swap the coordinator",
-            "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\n{current_line}",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -523,7 +539,7 @@
           },
           "wiz_swap_migrate": {
             "title": "Swap the coordinator",
-            "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\n{current_line}",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -536,7 +552,7 @@
           },
           "wiz_confirm": {
             "title": "Ready to restore",
-            "description": "**Backup:** {file}, network {network}\n**New coordinator:** `{port}`\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
+            "description": "**Backup:** {file}, network {network}\n**New coordinator:** {target}\n\n{start_note}\n\n**Good to know**\n{warnings}\n\nPress **Next** to restore."
           },
           "wiz_blocked": {
             "title": "This backup can't be used",
@@ -573,6 +589,13 @@
               "wiz_rollback": "Go back to the old coordinator",
               "wiz_close": "Close and leave things as they are"
             }
+          },
+          "wiz_extra": {
+            "title": "One more question",
+            "description": "{message}",
+            "data": {
+              "agree": "Yes, go ahead"
+            }
           }
         },
         "progress": {
@@ -587,13 +610,14 @@
           "preparing": "Getting ready…"
         },
         "error": {
-          "unplugged_required": "Tick the box once the hardware is swapped."
+          "unplugged_required": "Tick the box once the hardware is swapped.",
+          "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written)."
         },
         "abort": {
           "swap_unsupported": "{reason}",
           "no_backups": "There are no stored {source} backups to restore.",
           "swap_busy": "{error}",
-          "swap_failed": "The {source} replacement did not finish: {error}\n\nRadio Guard put {source} back the way it was. Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
+          "swap_failed": "The {source} replacement did not finish: {error}\n\n{after} Your backups are untouched; you can start again from Settings > Devices & services > Radio Guard > Configure.",
           "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
           "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
           "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",

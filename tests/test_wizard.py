@@ -1194,6 +1194,7 @@ WIZ_FORM_MENU_STEPS = {
     "wiz_swap_migrate",
     "wiz_confirm",
     "wiz_blocked",
+    "wiz_extra",
     "wiz_done",
     "wiz_done_migrate",
     "wiz_rollback_swap",
@@ -1209,7 +1210,7 @@ WIZ_PROGRESS = {
     "checking_devices",
     "starting_old",
 }
-WIZ_ERRORS = {"unplugged_required"}
+WIZ_ERRORS = {"unplugged_required", "agree_required"}
 WIZ_ABORTS = {
     "swap_unsupported",
     "no_backups",

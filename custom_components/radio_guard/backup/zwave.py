@@ -375,7 +375,14 @@ class ZWaveJSSource(BackupSource):
             automatic=True,
             choose_port=False,
             stop_first=False,
-            current_port=entry.data.get("url"),
+            current_port=None,
+            details={
+                "external_server": True,
+                "target": "the stick your Z-Wave JS server now uses",
+                "after_failure": "Nothing was written to the new stick.",
+                "note": "If Z-Wave JS shows *An unknown adapter was detected*, leave it until the replacement "
+                "has finished: Radio Guard updates it when the restore succeeds.",
+            },
             plug_in=(
                 "Then point your Z-Wave JS server at it. In Z-Wave JS UI: *Settings > Z-Wave > Serial port*, "
                 "pick the new stick and save. Radio Guard waits for the new stick to come online and does "

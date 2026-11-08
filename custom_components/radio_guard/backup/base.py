@@ -48,6 +48,15 @@ class RestoreCheck:
     backup: dict[str, Any] = field(default_factory=dict)
 
 
+class ConfirmationNeeded(Exception):
+    """The restore can go on, but only after the user agrees to something irreversible."""
+
+    def __init__(self, key: str, message: str) -> None:
+        super().__init__(message)
+        self.key = key  # set meta[key] = True and retry once the user confirms
+        self.message = message
+
+
 @dataclass
 class SwapPlan:
     """How a guided coordinator replacement works for a source on this install."""

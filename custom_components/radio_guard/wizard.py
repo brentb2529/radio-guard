@@ -24,7 +24,7 @@ from homeassistant import data_entry_flow
 from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
-from .backup.base import DeviceReport, SwapPlan
+from .backup.base import ConfirmationNeeded, DeviceReport, SwapPlan
 from .const import DOMAIN, PRE_RESTORE_PREFIX
 from .coordinator import RadioGuardCoordinator, device_count_of
 from .storage import BackupRecord
@@ -52,6 +52,11 @@ _PREFLIGHT_NOISE = (
     "Live coordinator already has this backup",
     "Z-Wave JS is not loaded",  # expected mid-swap; re-checked on the new stick before restoring
     "Could not read the attached controller",
+    "ZHA is not loaded",
+    "Could not read the attached radio",
+    "ZHA will be unloaded during the restore",
+    "Never power the old coordinator again",
+    "Attached radio already carries this backup",
 )
 
 
@@ -106,6 +111,8 @@ class ReplaceWizardMixin:
     _rolled_back: bool = False
     _result: dict[str, Any] | None = None
     _report: DeviceReport | None = None
+    _extra_meta: dict[str, Any] | None = None
+    _confirm: ConfirmationNeeded | None = None
 
     # ------------------------------------------------------------ helpers
 
@@ -335,6 +342,7 @@ class ReplaceWizardMixin:
             errors=errors,
             description_placeholders=self._ph(
                 current=self._old_port or "not set",
+                current_line=f"Current setting: `{self._old_port}`" if self._old_port else "",
                 intro=self._swap_intro(),
                 plug_in=self._plan.plug_in or DEFAULT_PLUG_IN,
             ),
@@ -384,9 +392,13 @@ class ReplaceWizardMixin:
                 file=_record_label(record),
                 network=str(meta.get("extended_pan_id") or meta.get("home_id_hex") or "?"),
                 port=self._port or self._old_port or "unchanged",
+                target=self._plan.details.get("target") or f"`{self._port or self._old_port or 'unchanged'}`",
                 warnings="\n".join(f"- {w}" for w in warnings) or "- none",
                 start_note=(
-                    "Radio Guard then starts it, checks the network and asks your devices to report in."
+                    "Radio Guard then waits for it on the new stick, restores your network, checks it and asks "
+                    "your devices to report in."
+                    if self._plan.details.get("external_server")
+                    else "Radio Guard then starts it, checks the network and asks your devices to report in."
                     if self._plan.automatic
                     else f"You will then be asked to start {self._st.source.name} again; Radio Guard checks the "
                     "network and asks your devices to report in."
@@ -413,15 +425,35 @@ class ReplaceWizardMixin:
         if shown:
             return shown
         if err := self._take_result():
+            if isinstance(err, ConfirmationNeeded):
+                self._confirm = err
+                return self.async_show_progress_done(next_step_id="wiz_extra")
             return self._fail(err)
         return self.async_show_progress_done(
             next_step_id="wiz_devices" if self._result is not None else "wiz_start"
         )
 
+    async def async_step_wiz_extra(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        """The radio asked for something irreversible (e.g. a one-time IEEE write): ask, then retry."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input.get("agree"):
+                self._extra_meta = {**(self._extra_meta or {}), self._confirm.key: True}
+                return await self.async_step_wiz_restore()
+            errors["agree"] = "agree_required"
+        return self.async_show_form(
+            step_id="wiz_extra",
+            data_schema=vol.Schema({vol.Required("agree", default=False): bool}),
+            errors=errors,
+            description_placeholders=self._ph(message=self._confirm.message if self._confirm else ""),
+        )
+
     async def _apply(self) -> None:
         st = self._st
         data = await self.hass.async_add_executor_job(st.store.read, self._record)
-        await st.source.async_swap_apply(data, self._record.meta, self._port)
+        await st.source.async_swap_apply(data, {**self._record.meta, **(self._extra_meta or {})}, self._port)
         if self._plan.automatic:
             await st.source.async_swap_start(self._plan)
             await st.source.async_wait_started(START_TIMEOUT)
@@ -594,17 +626,19 @@ class ReplaceWizardMixin:
                 description_placeholders=self._ph(error=self._error or ""),
             )
         await self._cleanup()
-        return self.async_abort(
-            reason="swap_failed", description_placeholders=self._ph(error=self._error or "")
-        )
+        return self.async_abort(reason="swap_failed", description_placeholders=self._failure_ph())
+
+    def _failure_ph(self) -> dict[str, str]:
+        details = self._plan.details if self._plan else {}
+        after = details.get("after_failure") or f"Radio Guard put {self._st.source.name} back the way it was."
+        note = details.get("note", "")
+        return self._ph(error=self._error or "", after=f"{after} {note}".strip())
 
     async def async_step_wiz_close(
         self, user_input: dict[str, Any] | None = None
     ) -> data_entry_flow.FlowResult:
         await self._cleanup()
-        return self.async_abort(
-            reason="swap_failed", description_placeholders=self._ph(error=self._error or "")
-        )
+        return self.async_abort(reason="swap_failed", description_placeholders=self._failure_ph())
 
     async def _cleanup(self) -> None:
         """If the user walks away or it fails: put back what we stopped."""

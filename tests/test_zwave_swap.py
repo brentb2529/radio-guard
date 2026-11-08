@@ -278,8 +278,10 @@ async def test_swap_plan_external_server(hass: HomeAssistant, source: ZWaveJSSou
     assert plan.automatic is True
     assert plan.choose_port is False
     assert plan.stop_first is False
-    assert plan.current_port == SERVER_URL
-    assert plan.details == {}
+    assert plan.current_port is None  # the server URL is not a "port" the user cares about
+    assert plan.details["external_server"] is True
+    assert plan.details["after_failure"] == "Nothing was written to the new stick."
+    assert "unknown adapter" in plan.details["note"]
     assert "Z-Wave JS UI" in plan.plug_in
 
 
@@ -874,7 +876,7 @@ async def test_wizard_external_server_end_to_end(
     ph = result["description_placeholders"]
     assert ph["intro"] == "Radio Guard is ready."
     assert "Z-Wave JS UI" in ph["plug_in"]
-    assert ph["current"] == SERVER_URL
+    assert ph["current_line"] == ""
     assert st.swapping
 
     # the user points Z-Wave JS UI at the new (blank) stick; HA's integration comes back on it
@@ -890,8 +892,8 @@ async def test_wizard_external_server_end_to_end(
     assert result["step_id"] == "wiz_confirm"
     ph = result["description_placeholders"]
     assert ph["network"] == "0xE1A2B3C4"
-    assert ph["port"] == SERVER_URL
-    assert "Radio Guard then starts it" in ph["start_note"]
+    assert ph["target"] == "the stick your Z-Wave JS server now uses"
+    assert "waits for it on the new stick" in ph["start_note"]
 
     seen.clear()
     result = await mgr.async_configure(result["flow_id"], {})
