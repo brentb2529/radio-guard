@@ -9,7 +9,16 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RadioGuardConfigEntry
+from .const import DOMAIN
 from .entity import RadioGuardEntity
+
+
+def _short(err: Exception) -> str:
+    """Drop library prefixes like 'zwave_error: Z-Wave error 203 - ' so the toast reads as a sentence."""
+    text = str(err) or type(err).__name__
+    if " - " in text and text.split(" - ", 1)[0].count(" ") < 6:
+        text = text.split(" - ", 1)[1]
+    return text.rstrip(".")
 
 
 async def async_setup_entry(
@@ -29,5 +38,9 @@ class BackupNowButton(RadioGuardEntity, ButtonEntity):
         try:
             await self.coordinator.async_backup(self.sid)
         except Exception as err:
-            raise HomeAssistantError(str(err)) from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="backup_failed",
+                translation_placeholders={"source": self.state_obj.source.name, "error": _short(err)},
+            ) from err
         await self.coordinator.async_request_refresh()

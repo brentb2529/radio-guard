@@ -81,7 +81,7 @@ class Zigbee2MQTTSource(BackupSource):
         self.data_dir_option = (data_dir or "").strip() or None
         self._offline_event = asyncio.Event()
         self._devices: list[dict[str, Any]] = []
-        self._ports_before: set[str] = set()
+        self._ports_before: set[str] | None = None
         self._info: dict[str, Any] = {}
         self._state: str | None = None
         self._info_event = asyncio.Event()
@@ -540,12 +540,13 @@ class Zigbee2MQTTSource(BackupSource):
 
     async def async_swap_ports(self) -> list[PortOption]:
         ports = await self.hass.async_add_executor_job(_serial_ports)
-        opts = [PortOption(path, label, new=path not in self._ports_before) for path, label in ports]
+        before = self._ports_before or set()
+        opts = [PortOption(path, label, new=path not in before) for path, label in ports]
         opts.sort(key=lambda o: (not o.new, o.label))
         return opts
 
     async def async_swap_stop(self, plan: SwapPlan) -> None:
-        if not self._ports_before:  # keep the first snapshot if the user goes back a step
+        if self._ports_before is None:  # keep the first snapshot if the user goes back a step
             self._ports_before = {p for p, _ in await self.hass.async_add_executor_job(_serial_ports)}
         if plan.automatic:
             mgr, _ = await self._addon()

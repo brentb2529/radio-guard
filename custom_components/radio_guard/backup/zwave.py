@@ -26,10 +26,21 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from ..const import RESTORE_TIMEOUT, SOURCE_NAMES, SOURCE_ZWAVE, ZWAVE_BACKUP_TIMEOUT
-from .base import BackupPayload, BackupSource, RestoreCheck, SourceUnavailable
+from .base import (
+    BackupPayload,
+    BackupSource,
+    DeviceReport,
+    PortOption,
+    RestoreCheck,
+    SourceUnavailable,
+    SwapPlan,
+)
 
 _LOGGER = logging.getLogger(__name__)
 ZWAVE_DOMAIN = "zwave_js"
+ZWAVE_ADDON_SLUG = "core_zwave_js"
+DRIVER_TIMEOUT = 300
+PING_TIMEOUT = 20
 
 # Keys as the Z-Wave JS integration stores them in entry.data for add-on users.
 KEY_FIELDS = (
@@ -296,3 +307,209 @@ class ZWaveJSSource(BackupSource):
         else:
             self.hass.config_entries.async_update_entry(entry, unique_id=str(version_info.home_id))
         await self.hass.config_entries.async_reload(entry.entry_id)
+
+    # ------------------------------------------------- guided replacement
+
+    def _any_entry(self) -> ConfigEntry | None:
+        """The Z-Wave JS entry in whatever state (a dead stick leaves it retrying, not loaded)."""
+        entries = [e for e in self.hass.config_entries.async_entries(ZWAVE_DOMAIN) if not e.disabled_by]
+        if self.home_id is not None:
+            entries = [e for e in entries if str(e.unique_id) == str(self.home_id)] or entries
+        return entries[0] if entries else None
+
+    def _addon_manager(self):
+        from homeassistant.components.hassio import AddonManager  # noqa: PLC0415
+
+        return AddonManager(self.hass, _LOGGER, "Z-Wave JS", ZWAVE_ADDON_SLUG)
+
+    def _uses_addon(self) -> bool:
+        entry = self._any_entry()
+        if entry is None or not entry.data.get("use_addon"):
+            return False
+        try:
+            from homeassistant.helpers.hassio import is_hassio  # noqa: PLC0415
+        except ImportError:
+            return False
+        return is_hassio(self.hass)
+
+    async def async_health(self) -> bool | None:
+        entry = self._any_entry()
+        if entry is None:
+            return None
+        if entry.state in (ConfigEntryState.SETUP_RETRY, ConfigEntryState.SETUP_ERROR):
+            return False
+        if entry.state is not ConfigEntryState.LOADED:
+            return None  # starting up / unloading: unknown, never "down"
+        try:
+            client = self._client(entry)
+        except SourceUnavailable:
+            return None
+        if not getattr(client, "connected", True):
+            return False
+        return getattr(client, "driver", None) is not None
+
+    async def async_swap_plan(self) -> SwapPlan:
+        entry = self._any_entry()
+        if entry is None:
+            return SwapPlan(supported=False, reason="The Z-Wave JS integration is not set up.")
+        if self._uses_addon():
+            port = entry.data.get("usb_path")
+            try:
+                info = await self._addon_manager().async_get_addon_info()
+                port = (info.options or {}).get("device") or port
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Could not read Z-Wave JS add-on options", exc_info=True)
+            return SwapPlan(
+                supported=True,
+                automatic=True,
+                choose_port=True,
+                current_port=port,
+                plug_in=(
+                    "A USB stick shows up under *New coordinator* a few seconds after you plug it in "
+                    "(marked *just plugged in*)."
+                ),
+                details={"addon": ZWAVE_ADDON_SLUG},
+            )
+        return SwapPlan(
+            supported=True,
+            automatic=True,
+            choose_port=False,
+            stop_first=False,
+            current_port=entry.data.get("url"),
+            plug_in=(
+                "Then point your Z-Wave JS server at it. In Z-Wave JS UI: *Settings > Z-Wave > Serial port*, "
+                "pick the new stick and save. Radio Guard waits for the new stick to come online and does "
+                "the rest."
+            ),
+        )
+
+    async def async_swap_ports(self) -> list[PortOption]:
+        from .z2m import _serial_ports  # noqa: PLC0415
+
+        ports = await self.hass.async_add_executor_job(_serial_ports)
+        before = getattr(self, "_ports_before", None) or set()
+        opts = [PortOption(path, label, new=path not in before) for path, label in ports]
+        opts.sort(key=lambda o: (not o.new, o.label))
+        return opts
+
+    async def async_swap_stop(self, plan: SwapPlan) -> None:
+        from .z2m import _serial_ports  # noqa: PLC0415
+
+        if getattr(self, "_ports_before", None) is None:
+            self._ports_before = {p for p, _ in await self.hass.async_add_executor_job(_serial_ports)}
+        if plan.automatic and plan.details.get("addon"):
+            _LOGGER.warning("Stopping the Z-Wave JS add-on to replace the controller")
+            await self._addon_manager().async_stop_addon()
+
+    async def async_wait_stopped(self, timeout: float | None) -> None:
+        return None
+
+    async def async_swap_set_port(self, port: str | None) -> None:
+        if not port or not self._uses_addon():
+            return
+        mgr = self._addon_manager()
+        info = await mgr.async_get_addon_info()
+        await mgr.async_set_addon_options({**(info.options or {}), "device": port})
+
+    async def _wait_driver(self, timeout: float | None, not_home_id: int | None = None) -> Any:
+        """Wait until the integration is loaded with a ready driver (optionally on a different controller)."""
+
+        async def _poll() -> Any:
+            while True:
+                entry = self._any_entry()
+                if entry is not None and entry.state is ConfigEntryState.SETUP_RETRY:
+                    # Don't sit out HA's retry backoff: try again now that the hardware changed.
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                if entry is not None and entry.state is ConfigEntryState.LOADED:
+                    with suppress(SourceUnavailable):
+                        client = self._client(entry)
+                        driver = getattr(client, "driver", None)
+                        connected = getattr(client, "connected", True)
+                        if connected and driver is not None and driver.controller is not None:
+                            if not_home_id is None or driver.controller.home_id != not_home_id:
+                                return driver.controller
+                await asyncio.sleep(3)
+
+        return await (asyncio.wait_for(_poll(), timeout) if timeout else _poll())
+
+    async def async_swap_apply(self, data: bytes, meta: dict[str, Any], port: str | None) -> None:
+        if self._uses_addon():
+            await self.async_swap_set_port(port)
+            await self._addon_manager().async_start_addon()
+        # Wait for a controller that is NOT the backed-up network: the new stick. The old (or the
+        # previous, still-cached) controller carries the backup's home ID and must never pass as done.
+        try:
+            await self._wait_driver(DRIVER_TIMEOUT, not_home_id=meta.get("home_id"))
+        except TimeoutError as err:
+            raise RuntimeError(
+                "Z-Wave JS did not come up on a new controller within 5 minutes. Check the new stick is "
+                "plugged in and that Z-Wave JS points at it, then run the replacement again."
+            ) from err
+        # Now that the new stick is live, run the real pre-flight against it (SDK, keys, idle).
+        check = await self.async_restore_check(data, meta)
+        if not check.ok:
+            raise RuntimeError("Pre-flight on the new controller failed: " + " ".join(check.reasons))
+        await self.async_restore(data, meta)
+
+    async def async_swap_start(self, plan: SwapPlan) -> None:
+        if self._uses_addon():
+            mgr = self._addon_manager()
+            with suppress(Exception):
+                await mgr.async_start_addon()
+
+    async def async_wait_started(self, timeout: float | None) -> None:
+        await self._wait_driver(timeout)
+
+    async def async_swap_verify(self, data: bytes, meta: dict[str, Any]) -> dict[str, Any]:
+        await self._wait_driver(DRIVER_TIMEOUT)
+        ident = await self.async_identity()
+        want = meta.get("home_id")
+        if want is not None and ident.get("home_id") != want:
+            raise RuntimeError(
+                f"The controller came back with home ID {ident.get('home_id_hex')} instead of the backup's "
+                f"{meta.get('home_id_hex') or want}. Nothing else was changed; run the replacement again."
+            )
+        return ident
+
+    async def async_check_devices(self, timeout: float) -> DeviceReport | None:
+        from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+        ctrl = self._controller()
+        started = dt_util.utcnow()
+        nodes = [n for n in ctrl.nodes.values() if n.node_id != ctrl.own_node_id]
+        if not nodes:
+            return None
+
+        def _name(n) -> str:
+            return getattr(n, "name", None) or getattr(n, "label", None) or f"Node {n.node_id}"
+
+        mains = [n for n in nodes if n.is_listening or getattr(n, "is_frequent_listening", False)]
+        battery = [n for n in nodes if n not in mains]
+
+        async def _ping(n) -> bool:
+            try:
+                return bool(await asyncio.wait_for(n.async_ping(), PING_TIMEOUT))
+            except Exception:  # noqa: BLE001
+                return False
+
+        results = await asyncio.gather(*(_ping(n) for n in mains))
+        back_mains = [n for n, ok in zip(mains, results, strict=True) if ok]
+
+        def _heard(n) -> bool:
+            seen = getattr(n, "last_seen", None)
+            return seen is not None and seen >= started
+
+        deadline = asyncio.get_running_loop().time() + min(30, timeout)
+        while (
+            battery and not all(_heard(n) for n in battery) and asyncio.get_running_loop().time() < deadline
+        ):
+            await asyncio.sleep(2)
+        back_battery = [n for n in battery if _heard(n)]
+        return DeviceReport(
+            mains_total=len(mains),
+            mains_back=len(back_mains),
+            battery_total=len(battery),
+            battery_back=len(back_battery),
+            missing_mains=sorted(_name(n) for n in mains if n not in back_mains),
+            missing_battery=sorted(_name(n) for n in battery if n not in back_battery),
+        )

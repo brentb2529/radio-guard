@@ -56,6 +56,8 @@ class SwapPlan:
     automatic: bool = False  # True: Radio Guard stops/starts the owning software itself
     choose_port: bool = False  # offer a port picker for the new coordinator
     current_port: str | None = None
+    stop_first: bool = True  # stop the owning software before the hardware swap
+    plug_in: str | None = None  # source-specific "plug in the new one" instructions (markdown)
     reason: str | None = None  # why not supported
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -123,6 +125,10 @@ class BackupSource(ABC):
     async def async_health(self) -> bool | None:
         """True if the coordinator is up, False if it is known to be down, None if unknown."""
         return None
+
+    def swap_reset(self) -> None:
+        """Forget per-swap state (e.g. which serial ports existed before the hardware swap)."""
+        self._ports_before: set[str] | None = None
 
     async def async_swap_plan(self) -> SwapPlan:
         return SwapPlan(supported=False, reason=f"Guided replacement is not available for {self.name} yet.")

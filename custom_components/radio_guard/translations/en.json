@@ -99,7 +99,7 @@
       },
       "wiz_swap": {
         "title": "Swap the coordinator",
-        "description": "{source} is stopped.\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+        "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
         "data": {
           "port": "New coordinator",
           "unplugged": "The old coordinator is unplugged",
@@ -112,7 +112,7 @@
       },
       "wiz_swap_migrate": {
         "title": "Swap the coordinator",
-        "description": "{source} is stopped and your fresh backup is saved.\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+        "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
         "data": {
           "port": "New coordinator",
           "unplugged": "The old coordinator is unplugged",
@@ -176,7 +176,8 @@
       "writing": "Writing your network into {source}'s data folder…",
       "wait_started": "**Start {source} now** (for example `docker start zigbee2mqtt`).\n\nThis page continues by itself once {source} is online and Radio Guard has checked the network.",
       "checking_devices": "Asking your devices to report in on the new coordinator. Mains-powered devices usually answer within a minute.",
-      "starting_old": "Starting {source} on the old coordinator and checking your network…"
+      "starting_old": "Starting {source} on the old coordinator and checking your network…",
+      "preparing": "Getting ready…"
     },
     "abort": {
       "swap_unsupported": "{reason}",
@@ -388,7 +389,7 @@
           },
           "wiz_swap": {
             "title": "Swap the coordinator",
-            "description": "{source} is stopped.\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -401,7 +402,7 @@
           },
           "wiz_swap_migrate": {
             "title": "Swap the coordinator",
-            "description": "{source} is stopped and your fresh backup is saved.\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -479,7 +480,8 @@
           "writing": "Writing your network into {source}'s data folder…",
           "wait_started": "**Start {source} now** (for example `docker start zigbee2mqtt`).\n\nThis page continues by itself once {source} is online and Radio Guard has checked the network.",
           "checking_devices": "Asking your devices to report in on the new coordinator. Mains-powered devices usually answer within a minute.",
-          "starting_old": "Starting {source} on the old coordinator and checking your network…"
+          "starting_old": "Starting {source} on the old coordinator and checking your network…",
+          "preparing": "Getting ready…"
         }
       }
     },
@@ -508,7 +510,7 @@
           },
           "wiz_swap": {
             "title": "Swap the coordinator",
-            "description": "{source} is stopped.\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and put it away. It must never be plugged in on this network again.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -521,7 +523,7 @@
           },
           "wiz_swap_migrate": {
             "title": "Swap the coordinator",
-            "description": "{source} is stopped and your fresh backup is saved.\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator address* instead.\n\nCurrent setting: `{current}`",
+            "description": "{intro}\n\n1. **Unplug the old coordinator** and keep it somewhere safe: it still holds your network if you need to go back. Don't plug it in while the new one runs.\n2. **Plug in the new coordinator.** {plug_in}\n\nCurrent setting: `{current}`",
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
@@ -581,7 +583,8 @@
           "writing": "Writing your network into {source}'s data folder…",
           "wait_started": "**Start {source} now** (for example `docker start zigbee2mqtt`).\n\nThis page continues by itself once {source} is online and Radio Guard has checked the network.",
           "checking_devices": "Asking your devices to report in on the new coordinator. Mains-powered devices usually answer within a minute.",
-          "starting_old": "Starting {source} on the old coordinator and checking your network…"
+          "starting_old": "Starting {source} on the old coordinator and checking your network…",
+          "preparing": "Getting ready…"
         },
         "error": {
           "unplugged_required": "Tick the box once the hardware is swapped."

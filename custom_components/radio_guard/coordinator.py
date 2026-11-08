@@ -577,6 +577,7 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
             raise RuntimeError(f"{st.source.name} is busy with a backup or restore; try again in a minute")
         st.swapping = True
         st.down_since = None
+        st.source.swap_reset()
         self.async_update_listeners()
 
     async def async_swap_end(self, sid: str, record: BackupRecord | None) -> BackupRecord | None:

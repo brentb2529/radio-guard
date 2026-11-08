@@ -37,6 +37,11 @@ STOP_TIMEOUT = 120
 START_TIMEOUT = 180
 DEVICE_TIMEOUT = 90
 MIN_PROGRESS_SECONDS = 1.5
+DEFAULT_PLUG_IN = (
+    "A USB stick shows up under *New coordinator* a few seconds after you plug it in (marked *just plugged "
+    "in*). For a network (Ethernet or Wi-Fi) coordinator, enter its address under *Network coordinator "
+    "address* instead."
+)
 # Pre-flight lines that only make sense for a live coordinator or the old staged path.
 _PREFLIGHT_NOISE = (
     "Could not read live coordinator identity",
@@ -45,6 +50,8 @@ _PREFLIGHT_NOISE = (
     "Z2M data dir found at",
     "Unplug the old coordinator for good",
     "Live coordinator already has this backup",
+    "Z-Wave JS is not loaded",  # expected mid-swap; re-checked on the new stick before restoring
+    "Could not read the attached controller",
 )
 
 
@@ -263,7 +270,7 @@ class ReplaceWizardMixin:
         automatic = self._plan.automatic
         shown = self._progress(
             "wiz_stop",
-            "stopping" if automatic else "wait_stopped",
+            ("stopping" if automatic else "wait_stopped") if self._plan.stop_first else "preparing",
             lambda: self._stop(STOP_TIMEOUT if automatic else None),
         )
         if shown:
@@ -326,8 +333,20 @@ class ReplaceWizardMixin:
             step_id="wiz_swap" if self._mode == MODE_REPLACE else "wiz_swap_migrate",
             data_schema=vol.Schema(schema),
             errors=errors,
-            description_placeholders=self._ph(current=self._old_port or "not set"),
+            description_placeholders=self._ph(
+                current=self._old_port or "not set",
+                intro=self._swap_intro(),
+                plug_in=self._plan.plug_in or DEFAULT_PLUG_IN,
+            ),
         )
+
+    def _swap_intro(self) -> str:
+        name = self._st.source.name
+        if not self._plan.stop_first:
+            return "Your fresh backup is saved." if self._mode == MODE_MIGRATE else "Radio Guard is ready."
+        if self._mode == MODE_MIGRATE:
+            return f"{name} is stopped and your fresh backup is saved."
+        return f"{name} is stopped."
 
     async def async_step_wiz_swap_migrate(
         self, user_input: dict[str, Any] | None = None
@@ -507,7 +526,7 @@ class ReplaceWizardMixin:
         automatic = self._plan.automatic
         shown = self._progress(
             "wiz_rollback",
-            "stopping" if automatic else "wait_stopped",
+            ("stopping" if automatic else "wait_stopped") if self._plan.stop_first else "preparing",
             lambda: self._stop(STOP_TIMEOUT if automatic else None),
         )
         if shown:
