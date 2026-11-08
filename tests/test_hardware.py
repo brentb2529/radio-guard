@@ -53,6 +53,18 @@ def test_classify_uses_description_for_shared_usb_chips() -> None:
     assert _classify_usb(generic, MATCHERS) == (None, None)
 
 
+def test_classify_plain_serial_port_without_usb_ids() -> None:
+    """HA 2026.10+ also returns SerialDevice entries (no vid/pid) for built-in UARTs and VM ports."""
+
+    class SerialDevice:  # shape of homeassistant.components.usb.models.SerialDevice
+        device = "/dev/ttyAMA0"
+        serial_number = None
+        manufacturer = None
+        description = "ttyAMA0"
+
+    assert _classify_usb(SerialDevice(), MATCHERS) == (None, None)
+
+
 async def test_find_filters_by_technology(hass: HomeAssistant) -> None:
     rows = [
         ("/dev/serial/by-id/zigbee", "Sonoff ZBDongle-P", ZIGBEE),

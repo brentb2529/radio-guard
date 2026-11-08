@@ -70,6 +70,8 @@ def _classify_usb(dev, matchers: dict[str, list[dict[str, Any]]]) -> tuple[str |
     """(tech, friendly name) from HA's manifest matchers. Description-specific matches win."""
     from homeassistant.components.usb.utils import usb_device_matches_matcher  # noqa: PLC0415
 
+    if getattr(dev, "vid", None) is None:
+        return None, None  # a plain serial port (HA 2026.10+ SerialDevice): nothing to match on
     best: tuple[int, str | None, str | None] = (-1, None, None)
     for tech, items in matchers.items():
         for m in items:
@@ -102,7 +104,12 @@ def serial_ports() -> list[tuple[str, str] | tuple[str, str, str | None]]:
         path = get_serial_by_id(dev.device)
         tech, known = _classify_usb(dev, _MATCHERS)
         name = known or human_readable_device_name(
-            path, dev.serial_number, dev.manufacturer, dev.description, dev.vid, dev.pid
+            path,
+            getattr(dev, "serial_number", None),
+            getattr(dev, "manufacturer", None),
+            getattr(dev, "description", None),
+            getattr(dev, "vid", None),
+            getattr(dev, "pid", None),
         )
         out.append((path, name, tech))
     return out
