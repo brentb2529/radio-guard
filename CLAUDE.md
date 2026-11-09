@@ -141,6 +141,12 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      `push.sh` copies `custom_components/radio_guard` in over SSH (Terminal & SSH add-on, key `vm_key`,
      port 2222) and restarts Core; `sup.py <method> <endpoint> [json]` calls the Supervisor API.
      Z-Wave JS **add-on** runs there on `socket: tcp://10.0.2.100:<stick>`.
+   - **Proxmox lab** (`../pve-lab`, not a repo): three Proxmox VE 9.2 arm64 nodes as QEMU+HVF VMs, clustered
+     (two links, no quorum device), VM 100 (Debian stand-in for the HA VM) replicated every minute and
+     HA-managed; `lab.sh`, `cluster.sh`, `havm.sh`, `drill.sh` (migrate / kill N / quorum / replication).
+     The HA OS test VM has a second NIC on the lab LAN (192.168.77.x) and runs Radio Guard + **Cluster
+     Guard** (`../cluster-guard`, HACS integration watching the cluster; tests use this venv). See
+     `../pve-lab/README.md` for ports, gotchas and measured failover times. Production is untouched.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
