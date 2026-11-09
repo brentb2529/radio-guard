@@ -149,6 +149,14 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
    Z-Wave JS **add-on** on HA OS (VM): stick probe detected a dead network stick that HA still showed as
    loaded; wizard unloaded Z-Wave JS, stopped the add-on, switched `socket` to stick B, started it, set the
    integration up on B, pre-flight refused SDK 7.17.99. Only the NVM write itself is untested.
+   **Machine-dies drill (VM, 2026-11-09):** encrypted HA backup downloaded off the VM -> HA config and local
+   backups wiped (fresh onboarding) -> Welcome > Or restore > Upload backup -> tick everything incl. Apps ->
+   key -> restored. Radio Guard, its coordinator backup, the Z-Wave JS add-on (socket + all 7 keys) and API
+   tokens came back; Radio Guard matched the live home ID to its backup. Findings: HA's restore screen leaves
+   Apps unticked (sheet now says so); a brand-new HA OS disk can't be used in the isolated VM (first boot
+   downloads Core; restores need `ha jobs options --ignore-conditions internet_system internet_host`, then
+   `ha jobs reset`). Simulated Z-Wave sticks EXIT when their client disconnects: restart `stick.cjs` and the
+   VM (guestfwd connects at QEMU start) after any add-on restart/restore.
    **Not verified:** real hardware; Z2M add-on (needs a real adapter, e.g. SLZB-06 in the VM); ZHA live
    (unit tests only); Z-Wave NVM write.
 3. **Tests: 581 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
