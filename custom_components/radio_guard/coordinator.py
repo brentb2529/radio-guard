@@ -184,6 +184,7 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         # Down-detection only counts after HA has fully started plus a grace period, so a slow
         # boot (add-ons, Z2M, the broker still coming up) never looks like a dead coordinator.
         self._ready_at: datetime | None = None
+        self._shared: dict[str, str] = {}  # sid -> companion on the same two-in-one stick (while down)
         self._build_sources()
 
     # ------------------------------------------------------------ config
@@ -342,9 +343,26 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
                 st.identity = {}
             await self._update_health(st)
             st.replaced_seen = st.replaced_seen + 1 if st.coordinator_replaced else 0
+        self._shared = {}
+        if any(self.coordinator_down(st) for st in self.states.values()):
+            for sid in self.states:
+                if companion := await self.async_companion(sid):
+                    self._shared[sid] = companion
+        for sid, st in self.states.items():
             self._update_issues(sid, st)
         self._suggest_new_sources()
         return self.states
+
+    def _down_issue(self, sid: str, st: SourceState) -> tuple[bool, str]:
+        """(raise the down issue for ``sid``?, name to show). One issue for a dead two-in-one stick."""
+        down = self.coordinator_down(st)
+        companion = self._shared.get(sid)
+        if not down or companion is None or not self.coordinator_down(self.states[companion]):
+            return down, st.source.name
+        # Both radios of one stick are down: one issue, on the Zigbee side (the wizard handles both).
+        if sid == SOURCE_ZWAVE:
+            return False, st.source.name
+        return True, f"{st.source.name} and {self.states[companion].source.name}"
 
     def _suggest_new_sources(self) -> None:
         """Offer to protect a ZHA / Z-Wave JS set up after Radio Guard (Z2M can't be told from plain MQTT)."""
@@ -390,14 +408,15 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         stale = st.available and age is not None and age > self.stale_hours and not down
         if down:
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_BACKUP_FAILED}_{sid}")
+        down_issue, down_name = self._down_issue(sid, st)
         _set_issue(
             self.hass,
             f"{ISSUE_COORDINATOR_DOWN}_{sid}",
-            down,
+            down_issue,
             translation_key=ISSUE_COORDINATOR_DOWN,
             severity=ir.IssueSeverity.ERROR,
             placeholders={
-                "source": st.source.name,
+                "source": down_name,
                 "minutes": f"{self.offline_minutes:.0f}",
                 "since": dt_util.as_local(st.down_since).strftime("%H:%M") if st.down_since else "",
             },
@@ -593,6 +612,28 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
             await self.async_request_refresh()
 
     # ------------------------------------------------ guided replacement
+
+    async def async_companion(self, sid: str) -> str | None:
+        """The other source whose radio sits on the same USB stick as ``sid``'s, if any.
+
+        Only for sources Radio Guard can stop, re-point and start itself; a two-in-one stick is
+        then replaced in one go.
+        """
+        from . import hardware  # noqa: PLC0415
+
+        ports: dict[str, str | None] = {}
+        for other in self.states:
+            try:
+                plan = await self.states[other].source.async_swap_plan()
+            except Exception:  # noqa: BLE001
+                continue
+            if plan.supported and plan.automatic and plan.choose_port and plan.current_port:
+                ports[other] = await self.hass.async_add_executor_job(hardware.by_id, plan.current_port)
+        mine = ports.get(sid)
+        for other, port in ports.items():
+            if other != sid and hardware.same_device(mine, port):
+                return other
+        return None
 
     def async_swap_begin(self, sid: str) -> None:
         st = self.states[sid]

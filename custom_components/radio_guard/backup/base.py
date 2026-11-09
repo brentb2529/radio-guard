@@ -168,7 +168,9 @@ class BackupSource(ABC):
             elif c.tech is None:
                 label += " (unrecognised device)"
             out.append(PortOption(c.value, label, new=new))
-        out.sort(key=lambda o: (not o.new, o.label))
+        # Newly plugged in first; among those, the same kind of stick on the same interface as the old
+        # one (a two-in-one stick shows two new ports: the Zigbee and the Z-Wave side).
+        out.sort(key=lambda o: (not o.new, -hardware.match_score(current, o.value), o.label))
         return out
 
     async def async_swap_stop(self, plan: SwapPlan) -> None:

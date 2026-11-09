@@ -120,7 +120,11 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
    name differs. Tag `v0.1.0` after first dev-instance validation; manifest `version` must match.
 2. **Dev environments (Mac mini 192.168.1.196).**
    - `bensten-dev-ha` (Docker Core HA 2026.10.2, no Supervisor, `../dev-ha/config`, prod clone with fake
-     `prod_mirror` entities; prod itself runs **Z-Wave JS** with 2 nodes, no ZHA/Z2M). Radio Guard is
+     `prod_mirror` entities). **Production** (read-only inventory 2026-11-09): Raspberry Pi 5, HA OS 18.4,
+     HA 2026.11; ONE Aeotec Z-Stick 10 Pro (USB `10c4:ea70`, CP2105 dual UART, unknown to HA's manifests)
+     carrying both radios: `-if01` = Z-Wave JS add-on (7 devices), `-if00` = ZHA (EZSP, 16 devices). Also
+     Matter Server add-on and a SmartThings hub (170 devices, outside Radio Guard). HA backups: daily 04:00,
+     encrypted, local x3 + HA Cloud (newest only). On the dev HA, Radio Guard is
      bind-mounted from this repo: **restart the container after code changes** (stale code bit us once).
    - Simulated Z2M: `smoke/z2m.sh start ../dev-ha/config/zigbee2mqtt | stop | status` (ONE instance;
      `pkill -f "python fake_z2m.py"` does NOT match on macOS). Stick = `serial.port tcp://<stick>:6638`.
@@ -147,7 +151,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
    integration up on B, pre-flight refused SDK 7.17.99. Only the NVM write itself is untested.
    **Not verified:** real hardware; Z2M add-on (needs a real adapter, e.g. SLZB-06 in the VM); ZHA live
    (unit tests only); Z-Wave NVM write.
-3. **Tests: 553 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
+3. **Tests: 563 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
    does NOT do", FAQ, screenshots under `docs/img/`.

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,52 @@ class Candidate:
     label: str
     tech: str | None  # zigbee / zwave / None (unrecognised)
     network: bool = False
+
+
+# /dev/serial/by-id/usb-<maker>_<product>_<serial>-if<NN>-port<N>. Two-in-one sticks (Aeotec Z-Stick 10
+# Pro, Zooz ZAC93...) expose one USB device with two interfaces: one per radio.
+_BY_ID = re.compile(r"^(?P<device>/dev/serial/by-id/.+?)(?:-if(?P<iface>\d+))?(?:-port\d+)?$")
+
+
+def usb_parts(path: str | None) -> tuple[str, str, str | None] | None:
+    """(physical device, model, interface) from a /dev/serial/by-id path; None for anything else.
+
+    The model is the device without its trailing serial number, so the same kind of stick with a
+    different serial (a replacement) has the same model.
+    """
+    if not path or not path.startswith("/dev/serial/by-id/"):
+        return None
+    m = _BY_ID.match(path)
+    if not m:
+        return None
+    device = m["device"]
+    model = device.rsplit("_", 1)[0] if "_" in device.rsplit("/", 1)[-1] else device
+    return device, model, m["iface"]
+
+
+def same_device(a: str | None, b: str | None) -> bool:
+    """True if two ports are two radios on one physical USB stick."""
+    pa, pb = usb_parts(a), usb_parts(b)
+    return bool(pa and pb and a != b and pa[0] == pb[0])
+
+
+def match_score(old: str | None, new: str) -> int:
+    """How well ``new`` fits as the successor of ``old``: 2 same model and interface, 1 same model."""
+    po, pn = usb_parts(old), usb_parts(new)
+    if not po or not pn or po[1] != pn[1]:
+        return 0
+    return 2 if po[2] == pn[2] else 1
+
+
+def by_id(path: str | None) -> str | None:
+    """Resolve /dev/ttyUSB0 and friends to their stable /dev/serial/by-id name (blocking)."""
+    if not path or path.startswith("/dev/serial/by-id/") or not path.startswith("/dev/"):
+        return path
+    try:
+        from homeassistant.components.usb import get_serial_by_id  # noqa: PLC0415
+    except ImportError:
+        return path
+    return get_serial_by_id(path)
 
 
 async def _manifest(hass: HomeAssistant, domain: str) -> dict[str, Any]:

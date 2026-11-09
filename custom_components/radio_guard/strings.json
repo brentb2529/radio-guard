@@ -103,11 +103,13 @@
         "data": {
           "port": "New coordinator",
           "unplugged": "The old coordinator is unplugged",
-          "network_address": "Network coordinator address"
+          "network_address": "Network coordinator address",
+          "companion_port": "Second radio on the same stick"
         },
         "data_description": {
           "port": "Leave as is if the new coordinator uses the same port as the old one.",
-          "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+          "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out.",
+          "companion_port": "The matching port of your new stick. Leave as is."
         }
       },
       "wiz_swap_migrate": {
@@ -116,11 +118,13 @@
         "data": {
           "port": "New coordinator",
           "unplugged": "The old coordinator is unplugged",
-          "network_address": "Network coordinator address"
+          "network_address": "Network coordinator address",
+          "companion_port": "Second radio on the same stick"
         },
         "data_description": {
           "port": "Leave as is if the new coordinator uses the same port as the old one.",
-          "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+          "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out.",
+          "companion_port": "The matching port of your new stick. Leave as is."
         }
       },
       "wiz_confirm": {
@@ -169,12 +173,21 @@
         "data": {
           "agree": "Yes, go ahead"
         }
+      },
+      "wiz_done_next": {
+        "title": "Your {source} network is back",
+        "description": "{source} is running on the new stick (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}\n\n**Next: {next}**, the second radio on the same stick. You don't need to touch the hardware again.",
+        "menu_options": {
+          "wiz_next": "Continue with the second radio",
+          "wiz_devices": "Ask devices to report in again"
+        }
       }
     },
     "error": {
       "no_sources": "Select at least one coordinator.",
       "unplugged_required": "Tick the box once the hardware is swapped.",
-      "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written)."
+      "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written).",
+      "same_port": "This is the port you chose for the first radio. Pick the stick's other port."
     },
     "progress": {
       "stopping": "Stopping {source}…",
@@ -401,11 +414,13 @@
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
-              "network_address": "Network coordinator address"
+              "network_address": "Network coordinator address",
+              "companion_port": "Second radio on the same stick"
             },
             "data_description": {
               "port": "Leave as is if the new coordinator uses the same port as the old one.",
-              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out.",
+              "companion_port": "The matching port of your new stick. Leave as is."
             }
           },
           "wiz_swap_migrate": {
@@ -414,11 +429,13 @@
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
-              "network_address": "Network coordinator address"
+              "network_address": "Network coordinator address",
+              "companion_port": "Second radio on the same stick"
             },
             "data_description": {
               "port": "Leave as is if the new coordinator uses the same port as the old one.",
-              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out.",
+              "companion_port": "The matching port of your new stick. Leave as is."
             }
           },
           "wiz_confirm": {
@@ -467,13 +484,22 @@
             "data": {
               "agree": "Yes, go ahead"
             }
+          },
+          "wiz_done_next": {
+            "title": "Your {source} network is back",
+            "description": "{source} is running on the new stick (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}\n\n**Next: {next}**, the second radio on the same stick. You don't need to touch the hardware again.",
+            "menu_options": {
+              "wiz_next": "Continue with the second radio",
+              "wiz_devices": "Ask devices to report in again"
+            }
           }
         },
         "error": {
           "acknowledge_required": "Tick the box to confirm the old coordinator is unplugged.",
           "type_restore": "Type RESTORE in capitals.",
           "unplugged_required": "Tick the box once the hardware is swapped.",
-          "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written)."
+          "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written).",
+          "same_port": "This is the port you chose for the first radio. Pick the stick's other port."
         },
         "abort": {
           "no_backups": "There are no stored {source} backups to restore.",
@@ -507,7 +533,7 @@
         "step": {
           "init": {
             "title": "{source} is not responding",
-            "description": "{source} has stopped responding. If its coordinator has failed, Radio Guard can move your network onto a replacement from your backup, with no re-pairing.\n\nIf {source} is just restarting or being updated, keep waiting: this message clears itself when it's back.",
+            "description": "{source} stopped responding. If the coordinator has failed, Radio Guard can move your network onto a replacement from your backup, with no re-pairing.\n\nIf {source} is just restarting or being updated, keep waiting: this message clears itself when it's back.",
             "menu_options": {
               "wiz_pick": "My coordinator failed, replace it",
               "wait": "Keep waiting"
@@ -530,11 +556,13 @@
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
-              "network_address": "Network coordinator address"
+              "network_address": "Network coordinator address",
+              "companion_port": "Second radio on the same stick"
             },
             "data_description": {
               "port": "Leave as is if the new coordinator uses the same port as the old one.",
-              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out.",
+              "companion_port": "The matching port of your new stick. Leave as is."
             }
           },
           "wiz_swap_migrate": {
@@ -543,11 +571,13 @@
             "data": {
               "port": "New coordinator",
               "unplugged": "The old coordinator is unplugged",
-              "network_address": "Network coordinator address"
+              "network_address": "Network coordinator address",
+              "companion_port": "Second radio on the same stick"
             },
             "data_description": {
               "port": "Leave as is if the new coordinator uses the same port as the old one.",
-              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out."
+              "network_address": "For example 192.168.1.50 or tcp://slzb-06.local:6638. Port 6638 is assumed if you leave it out.",
+              "companion_port": "The matching port of your new stick. Leave as is."
             }
           },
           "wiz_confirm": {
@@ -596,6 +626,14 @@
             "data": {
               "agree": "Yes, go ahead"
             }
+          },
+          "wiz_done_next": {
+            "title": "Your {source} network is back",
+            "description": "{source} is running on the new stick (`{port}`) with your network {network}, and Radio Guard took a fresh backup of it.\n\n{devices}\n\n**Next: {next}**, the second radio on the same stick. You don't need to touch the hardware again.",
+            "menu_options": {
+              "wiz_next": "Continue with the second radio",
+              "wiz_devices": "Ask devices to report in again"
+            }
           }
         },
         "progress": {
@@ -611,7 +649,8 @@
         },
         "error": {
           "unplugged_required": "Tick the box once the hardware is swapped.",
-          "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written)."
+          "agree_required": "Tick the box to continue, or close this dialog to stop here (nothing has been written).",
+          "same_port": "This is the port you chose for the first radio. Pick the stick's other port."
         },
         "abort": {
           "swap_unsupported": "{reason}",

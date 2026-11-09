@@ -1197,6 +1197,7 @@ WIZ_FORM_MENU_STEPS = {
     "wiz_extra",
     "wiz_done",
     "wiz_done_migrate",
+    "wiz_done_next",
     "wiz_rollback_swap",
     "wiz_failed_migrate",
 }
@@ -1210,7 +1211,7 @@ WIZ_PROGRESS = {
     "checking_devices",
     "starting_old",
 }
-WIZ_ERRORS = {"unplugged_required", "agree_required"}
+WIZ_ERRORS = {"unplugged_required", "agree_required", "same_port"}
 WIZ_ABORTS = {
     "swap_unsupported",
     "no_backups",
@@ -1223,6 +1224,7 @@ WIZ_MENUS = {
     "wiz_done": ["wiz_finish", "wiz_devices"],
     "wiz_done_migrate": ["wiz_finish", "wiz_devices", "wiz_rollback"],
     "wiz_failed_migrate": ["wiz_rollback", "wiz_close"],
+    "wiz_done_next": ["wiz_next", "wiz_devices"],
 }
 
 

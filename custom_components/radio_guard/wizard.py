@@ -11,6 +11,11 @@ Two modes, one path:
 
 The user only touches hardware (and, for a Zigbee2MQTT that HA does not manage, stops and
 starts its container when asked). Progress steps advance on their own.
+
+Two-in-one sticks (one USB device carrying a Zigbee and a Z-Wave radio, e.g. Aeotec Z-Stick 10 Pro):
+the other radio's software is the *companion*. It is backed up and stopped together with the first,
+the user swaps the stick once (both new ports are pre-selected), and after the first network is back
+the wizard continues with the companion on the same stick.
 """
 
 from __future__ import annotations
@@ -114,6 +119,10 @@ class ReplaceWizardMixin:
     _extra_meta: dict[str, Any] | None = None
     _confirm: ConfirmationNeeded | None = None
     _applied: bool = False  # the new coordinator has been put in place (port switched / files written)
+    # Two-in-one stick: the other radio's source. Keys: sid, plan, old_port, port, record, stopped.
+    _comp: dict[str, Any] | None = None
+    _phase: int = 1  # 2 = working on the companion
+    _first: tuple[str, str, str] | None = None  # (name, port, device summary) of phase 1
 
     # ------------------------------------------------------------ helpers
 
@@ -131,6 +140,9 @@ class ReplaceWizardMixin:
     async def _wizard_finish(self) -> data_entry_flow.FlowResult:  # pragma: no cover - overridden
         raise NotImplementedError
 
+    def _comp_name(self) -> str:
+        return self._coord.states[self._comp["sid"]].source.name if self._comp else ""
+
     def _progress(self, step_id: str, action: str, job) -> data_entry_flow.FlowResult | None:
         """Run ``job()`` behind a progress spinner; returns None once it has finished.
 
@@ -146,9 +158,14 @@ class ReplaceWizardMixin:
                 step_id=step_id,
                 progress_action=action,
                 progress_task=self._task,
-                description_placeholders=self._ph(
-                    port=self._port or "", old_port=self._old_port or "", stopper=self._stopper()
-                ),
+                description_placeholders={
+                    **self._ph(port=self._port or "", old_port=self._old_port or "", stopper=self._stopper()),
+                    **(
+                        {"source": f"{self._st.source.name} and {self._comp_name()}"}
+                        if action == "stopping" and self._comp and not self._comp["stopped"]
+                        else {}
+                    ),
+                },
             )
         return None
 
@@ -173,6 +190,17 @@ class ReplaceWizardMixin:
                 reason="swap_unsupported", description_placeholders=self._ph(reason=self._plan.reason or "")
             )
         self._old_port = self._plan.current_port
+        if self._plan.automatic and self._plan.choose_port:
+            if companion := await self._coord.async_companion(self.sid):
+                plan = await self._coord.states[companion].source.async_swap_plan()
+                self._comp = {
+                    "sid": companion,
+                    "plan": plan,
+                    "old_port": plan.current_port,
+                    "port": None,
+                    "record": None,
+                    "stopped": False,
+                }
         return None
 
     def _begin(self) -> data_entry_flow.FlowResult | None:
@@ -201,6 +229,8 @@ class ReplaceWizardMixin:
         if user_input is not None:
             self._file = user_input["file"]
             self._record = next(r for r in ordered if r.name == self._file)
+            if self._phase == 2:  # the companion is already stopped and its new port chosen
+                return await self.async_step_wiz_confirm()
             if aborted := self._begin():
                 return aborted
             return await self.async_step_wiz_stop()
@@ -288,13 +318,60 @@ class ReplaceWizardMixin:
         return self.async_show_progress_done(next_step_id="wiz_swap")
 
     async def _stop(self, timeout: float | None) -> None:
-        coro = self._st.source.async_swap_stop(self._plan)
-        await (asyncio.wait_for(coro, timeout) if timeout else coro)
+        async def _timed(coro):
+            await (asyncio.wait_for(coro, timeout) if timeout else coro)
+
+        comp = self._comp if self._comp and not self._comp["stopped"] else None
+        if comp:
+            # Same stick: guard the companion too, and back it up while its radio may still answer.
+            self._coord.async_swap_begin(comp["sid"])
+            comp["stopped"] = True
+            await self._companion_backup()
+        await _timed(self._st.source.async_swap_stop(self._plan))
+        if comp and self._comp:
+            await _timed(self._coord.states[comp["sid"]].source.async_swap_stop(comp["plan"]))
+
+    async def _companion_backup(self) -> None:
+        """Fresh backup of the companion if its radio still works, else its latest nightly one."""
+        comp = self._comp
+        cst = self._coord.states[comp["sid"]]
+        record = None
+        try:
+            if cst.source.available() and await cst.source.async_health() is not False:
+                record = await self._coord.async_backup(comp["sid"])
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Fresh %s backup failed, using the latest stored one: %s", cst.source.name, err)
+        if record is None:
+            records = await self.hass.async_add_executor_job(cst.store.list)
+            record = next((r for r in records if not r.name.startswith(PRE_RESTORE_PREFIX)), None)
+        if record is None:
+            _LOGGER.warning(
+                "No %s backup to restore; only %s is moved", cst.source.name, self._st.source.name
+            )
+            await self._release_companion()
+            self._comp = None
+            return
+        comp["record"] = record
+
+    async def _release_companion(self) -> None:
+        """Start the companion again where it was (the wizard stopped short of moving it)."""
+        comp = self._comp
+        if not comp or not comp["stopped"]:
+            return
+        comp["stopped"] = False
+        cst = self._coord.states[comp["sid"]]
+        try:
+            await cst.source.async_swap_start(comp["plan"])
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Could not restart %s", cst.source.name, exc_info=True)
+        await self._coord.async_swap_end(comp["sid"], None)
 
     # ---------------------------------------------------------- swap
 
-    async def _port_field(self, suggested_current: str | None) -> tuple[dict[Any, Any], bool]:
-        ports = await self._st.source.async_swap_ports(suggested_current)
+    async def _port_field(
+        self, suggested_current: str | None, *, key: str = "port", source=None
+    ) -> tuple[dict[Any, Any], bool]:
+        ports = await (source or self._st.source).async_swap_ports(suggested_current)
         options = [
             selector.SelectOptionDict(
                 value=p.value, label=f"{p.label} (just plugged in)" if p.new else p.label
@@ -309,7 +386,7 @@ class ReplaceWizardMixin:
             )
         new_ports = [p for p in ports if p.new]
         suggested = new_ports[0].value if new_ports else suggested_current
-        field = vol.Optional("port", description={"suggested_value": suggested})
+        field = vol.Optional(key, description={"suggested_value": suggested})
         return {
             field: selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -330,11 +407,24 @@ class ReplaceWizardMixin:
                 if network and "://" not in network:
                     network = f"tcp://{network}" if ":" in network else f"tcp://{network}:6638"
                 self._port = network or (user_input.get("port") or "").strip() or None
-                return await self.async_step_wiz_confirm()
+                if self._comp:
+                    comp_port = (user_input.get("companion_port") or "").strip() or None
+                    if comp_port and comp_port == self._port:
+                        errors["companion_port"] = "same_port"
+                    else:
+                        self._comp["port"] = comp_port
+                if not errors:
+                    return await self.async_step_wiz_confirm()
         schema: dict[Any, Any] = {}
         if self._plan.choose_port:
             field, _ = await self._port_field(self._old_port)
             schema.update(field)
+            if self._comp:
+                comp_src = self._coord.states[self._comp["sid"]].source
+                field, _ = await self._port_field(
+                    self._comp["old_port"], key="companion_port", source=comp_src
+                )
+                schema.update(field)
             schema[vol.Optional("network_address")] = selector.TextSelector()
         schema[vol.Required("unplugged", default=False)] = bool
         return self.async_show_form(
@@ -351,6 +441,15 @@ class ReplaceWizardMixin:
 
     def _swap_intro(self) -> str:
         name = self._st.source.name
+        if self._comp:
+            other = self._comp_name()
+            done = "Your fresh backups are saved and both" if self._mode == MODE_MIGRATE else "Both"
+            return (
+                f"Your stick carries two radios: **{name}** and **{other}**. {done} are stopped. Swap the "
+                f"stick once; Radio Guard moves {name} first, then {other}.\n\n*New coordinator* is the "
+                f"{name} side, *Second radio on the same stick* the {other} side. Radio Guard picks both "
+                "ports of the new stick for you."
+            )
         if not self._plan.stop_first:
             return "Your fresh backup is saved." if self._mode == MODE_MIGRATE else "Radio Guard is ready."
         if self._mode == MODE_MIGRATE:
@@ -518,19 +617,54 @@ class ReplaceWizardMixin:
         self, user_input: dict[str, Any] | None = None
     ) -> data_entry_flow.FlowResult:
         ident = self._result or {}
+        placeholders = self._ph(
+            network=str(ident.get("extended_pan_id") or ident.get("home_id_hex") or ""),
+            ieee=str(ident.get("ieee") or ident.get("home_id_hex") or ""),
+            port=self._port or self._old_port or "",
+            devices=self._device_summary(),
+        )
+        if self._comp:  # phase 1 of a two-in-one stick: the second radio is next
+            return self.async_show_menu(
+                step_id="wiz_done_next",
+                menu_options=["wiz_next", "wiz_devices"],
+                description_placeholders={**placeholders, "next": self._comp_name()},
+            )
+        if self._first:
+            name, port, summary = self._first
+            placeholders["devices"] = (
+                f"{placeholders['devices']}\n\n**{name}** (`{port}`), checked earlier:\n\n{summary}"
+            )
         options = ["wiz_finish", "wiz_devices"]
-        if self._mode == MODE_MIGRATE:
+        if self._mode == MODE_MIGRATE and not self._first:
             options.append("wiz_rollback")
         return self.async_show_menu(
             step_id="wiz_done" if self._mode == MODE_REPLACE else "wiz_done_migrate",
             menu_options=options,
-            description_placeholders=self._ph(
-                network=str(ident.get("extended_pan_id") or ident.get("home_id_hex") or ""),
-                ieee=str(ident.get("ieee") or ident.get("home_id_hex") or ""),
-                port=self._port or self._old_port or "",
-                devices=self._device_summary(),
-            ),
+            description_placeholders=placeholders,
         )
+
+    async def async_step_wiz_done_next(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        return await self.async_step_wiz_done(user_input)
+
+    async def async_step_wiz_next(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        """Two-in-one stick: the first network is back; now the second radio on the same stick."""
+        comp, self._comp = self._comp, None
+        self._first = (self._st.source.name, self._port or self._old_port or "", self._device_summary())
+        self.sid = comp["sid"]
+        self._plan = comp["plan"]
+        self._old_port = comp["old_port"]
+        self._port = comp["port"]
+        self._record = comp["record"]
+        self._file = comp["record"].name
+        self._phase = 2
+        self._stopped = True
+        self._done = self._applied = False
+        self._result = self._report = self._extra_meta = self._confirm = None
+        return await self.async_step_wiz_confirm()
 
     async def async_step_wiz_done_migrate(
         self, user_input: dict[str, Any] | None = None
@@ -608,6 +742,7 @@ class ReplaceWizardMixin:
         self._rolled_back = True
         self._port = self._old_port
         await self._coord.async_swap_end(self.sid, None)
+        await self._release_companion()  # the old stick is back: its other radio runs as before
 
     async def async_step_wiz_rolled_back(
         self, user_input: dict[str, Any] | None = None
@@ -621,7 +756,7 @@ class ReplaceWizardMixin:
     async def async_step_wiz_failed(
         self, user_input: dict[str, Any] | None = None
     ) -> data_entry_flow.FlowResult:
-        if self._mode == MODE_MIGRATE and self._stopped and not self._rolled_back:
+        if self._mode == MODE_MIGRATE and self._stopped and not self._rolled_back and self._phase == 1:
             return self.async_show_menu(
                 step_id="wiz_failed_migrate",
                 menu_options=["wiz_rollback", "wiz_close"],
@@ -633,6 +768,12 @@ class ReplaceWizardMixin:
     def _failure_ph(self) -> dict[str, str]:
         details = self._plan.details if self._plan else {}
         name = self._st.source.name
+        if self._first:
+            after = (
+                f"{self._first[0]} already runs on the new stick. {name} was not moved: open Radio Guard > "
+                f"Configure > Replace a failed coordinator and choose {name} to try again."
+            )
+            return self._ph(error=self._error or "", after=after)
         if details.get("after_failure"):
             after = details["after_failure"]
         elif self._applied and self._mode == MODE_REPLACE:
@@ -663,8 +804,9 @@ class ReplaceWizardMixin:
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning("Could not restart %s after an unfinished replacement", st.source.name)
             await self._coord.async_swap_end(self.sid, None)
+        await self._release_companion()
 
     def async_remove(self) -> None:
         """Flow closed (dialog X) before finishing."""
-        if self._stopped and not self._done:
+        if (self._stopped and not self._done) or (self._comp and self._comp["stopped"]):
             self.hass.async_create_task(self._cleanup())
