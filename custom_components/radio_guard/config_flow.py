@@ -54,6 +54,7 @@ from .const import (
     SOURCE_ZHA,
     SOURCE_ZWAVE,
 )
+from .recovery import PANEL as RECOVERY_PANEL
 from .wizard import ReplaceWizardMixin
 
 SECTION_SCHEDULE = "schedule"
@@ -305,7 +306,17 @@ class RadioGuardOptionsFlow(ReplaceWizardMixin, OptionsFlow):
     _next: str = ""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["settings", "replace", "migrate"])
+        return self.async_show_menu(
+            step_id="init", menu_options=["settings", "replace", "migrate", "recovery_sheet"]
+        )
+
+    async def async_step_recovery_sheet(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Link to the printable recovery sheet (a hidden admin page inside Home Assistant)."""
+        if self.config_entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="not_loaded")
+        return self.async_abort(
+            reason="recovery_sheet", description_placeholders={"url": f"/{RECOVERY_PANEL}"}
+        )
 
     async def async_step_replace(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         self._next = "replace"

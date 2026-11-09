@@ -151,7 +151,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
    integration up on B, pre-flight refused SDK 7.17.99. Only the NVM write itself is untested.
    **Not verified:** real hardware; Z2M add-on (needs a real adapter, e.g. SLZB-06 in the VM); ZHA live
    (unit tests only); Z-Wave NVM write.
-3. **Tests: 563 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
+3. **Tests: 581 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
    does NOT do", FAQ, screenshots under `docs/img/`.

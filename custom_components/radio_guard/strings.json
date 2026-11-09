@@ -27,7 +27,8 @@
         "menu_options": {
           "settings": "Settings",
           "replace": "Replace a failed coordinator",
-          "migrate": "Move to a new coordinator"
+          "migrate": "Move to a new coordinator",
+          "recovery_sheet": "Print the recovery sheet"
         }
       },
       "settings": {
@@ -208,7 +209,8 @@
       "rolled_back": "{source} is back on the old coordinator (`{port}`) and your network is running. You can try the move again any time.",
       "migrate_needs_running": "{source} isn't running right now, so there's nothing live to move. If its coordinator has failed, choose **Replace a failed coordinator** instead.",
       "keep_waiting": "Radio Guard keeps watching. This message disappears by itself when {source} is back.",
-      "not_loaded": "Radio Guard isn't loaded. Reload it and try again."
+      "not_loaded": "Radio Guard isn't loaded. Reload it and try again.",
+      "recovery_sheet": "[Open your recovery sheet]({url})\n\nIt lists your hardware, where your backups are and what to do when a radio or this machine fails. Print it, or save it as a PDF somewhere you can reach when Home Assistant is down, and keep it with your spare hardware."
     }
   },
   "entity": {

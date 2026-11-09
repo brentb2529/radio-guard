@@ -3,8 +3,10 @@
   "name": "Radio Guard",
   "after_dependencies": [
     "backup",
+    "frontend",
     "hassio",
     "mqtt",
+    "panel_custom",
     "usb",
     "zeroconf",
     "zha",
@@ -15,6 +17,7 @@
   ],
   "config_flow": true,
   "dependencies": [
+    "http",
     "repairs"
   ],
   "documentation": "https://github.com/brentb2529/radio-guard",

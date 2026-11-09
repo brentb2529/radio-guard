@@ -55,7 +55,7 @@ async def _open_settings(hass, entry_id):
     """Configure opens a menu; go to the Settings page."""
     result = await hass.config_entries.options.async_init(entry_id)
     assert result["type"] is FlowResultType.MENU
-    assert result["menu_options"] == ["settings", "replace", "migrate"]
+    assert result["menu_options"] == ["settings", "replace", "migrate", "recovery_sheet"]
     return await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "settings"})
 
 

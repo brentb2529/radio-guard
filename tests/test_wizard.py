@@ -709,7 +709,7 @@ async def open_options_migrate(hass: HomeAssistant, entry: MockConfigEntry) -> d
     mgr = hass.config_entries.options
     result = await mgr.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
-    assert result["menu_options"] == ["settings", "replace", "migrate"]
+    assert result["menu_options"] == ["settings", "replace", "migrate", "recovery_sheet"]
     return await mgr.async_configure(result["flow_id"], {"next_step_id": "migrate"})
 
 

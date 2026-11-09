@@ -62,3 +62,55 @@ def coverage_problems(hass: HomeAssistant, rg_hour: int, rg_minute: int) -> list
             "(Radio Guard > Configure > Settings)."
         )
     return problems
+
+
+_AGENT_NAMES = {
+    "cloud": "Home Assistant Cloud",
+    "google_drive": "Google Drive",
+    "onedrive": "Microsoft OneDrive",
+    "synology_dsm": "Synology NAS",
+    "backblaze_b2": "Backblaze B2",
+    "webdav": "WebDAV",
+    "aws_s3": "Amazon S3",
+    "azure_storage": "Azure Storage",
+    "idrive_e2": "IDrive e2",
+    "sftp_storage": "SFTP server",
+}
+
+
+def agent_label(agent_id: str) -> str:
+    """'hassio.local' -> 'This machine', 'hassio.nas' -> 'Network storage “nas”', 'cloud.cloud' -> ..."""
+    if agent_id in LOCAL_AGENTS:
+        return "This machine"
+    domain, _, name = agent_id.partition(".")
+    if domain == "hassio":
+        return f"Network storage “{name}”"
+    return _AGENT_NAMES.get(domain, domain.replace("_", " ").title())
+
+
+def backup_summary(hass: HomeAssistant) -> dict | None:
+    """Plain facts about HA's automatic backups for the recovery sheet; None if unreadable."""
+    try:
+        from homeassistant.components.backup import async_get_manager  # noqa: PLC0415
+
+        cfg = async_get_manager(hass).config.data
+    except Exception:  # noqa: BLE001
+        return None
+    schedule = cfg.schedule
+    recurrence = str(getattr(schedule.recurrence, "value", schedule.recurrence))
+    at = f"{(schedule.time or HA_DEFAULT_TIME):%H:%M}"
+    if recurrence == "daily":
+        when = f"every day at {at}"
+    elif recurrence == "custom_days" and schedule.days:
+        days = ", ".join(str(getattr(d, "value", d)).capitalize() for d in schedule.days)
+        when = f"{days} at {at}"
+    else:
+        when = None
+    agents = list(cfg.create_backup.agent_ids)
+    return {
+        "when": when,
+        "locations": [agent_label(a) for a in agents],
+        "cloud": any(a.startswith("cloud.") for a in agents),
+        "last": cfg.last_completed_automatic_backup,
+        "encrypted": bool(getattr(cfg.create_backup, "password", None)),
+    }

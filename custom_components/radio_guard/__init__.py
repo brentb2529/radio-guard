@@ -30,6 +30,8 @@ from .const import (
     SERVICE_RESTORE,
 )
 from .coordinator import RadioGuardCoordinator, RestoreBlocked, device_count_of
+from .recovery import async_register as async_register_recovery
+from .recovery import async_unregister as async_unregister_recovery
 from .storage import BackupRecord
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RadioGuardConfigEntry) -
     _remove_orphan_devices(hass, entry, coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await coordinator.async_start()
+    await async_register_recovery(hass)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     _register_services(hass)
     return True
@@ -69,6 +72,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: RadioGuardConfigEntry) 
     await entry.runtime_data.async_stop()
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok and len(hass.config_entries.async_loaded_entries(DOMAIN)) <= 1:
+        async_unregister_recovery(hass)
         for name in (SERVICE_BACKUP_NOW, SERVICE_RESTORE, SERVICE_LIST_BACKUPS):
             hass.services.async_remove(DOMAIN, name)
     return ok
