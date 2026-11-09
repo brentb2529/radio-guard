@@ -70,6 +70,8 @@ async def test_sheet_for_a_two_in_one_stick(
     assert "Encrypted:</b> yes" in page
     assert "secret-not-shown" not in page  # the encryption key itself never goes on paper
     assert "Home Assistant Cloud</b> (sign in" in page
+    assert "tick everything, including Apps" in page  # HA's restore screen leaves add-ons unticked
+    assert "Z-Wave JS app, which holds your Z-Wave security keys" in page
     assert "Fix before you need this sheet" not in page
     assert "<script" not in page.replace('onclick="window.print()"', "")
 

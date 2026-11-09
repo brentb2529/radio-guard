@@ -237,6 +237,12 @@ async def async_render(hass: HomeAssistant, coord: RadioGuardCoordinator) -> str
         if problems
         else ""
     )
+    # Add-ons the radios depend on (Z-Wave JS keeps the network's security keys in its settings).
+    apps = (
+        "the Z-Wave JS app, which holds your Z-Wave security keys"
+        if SOURCE_ZWAVE in coord.states
+        else "the apps your radios run on (for example Zigbee2MQTT)"
+    )
     restore_from = (
         "<b>Home Assistant Cloud</b> (sign in with your Nabu Casa account)"
         if ha and ha["cloud"]
@@ -306,8 +312,10 @@ re-pairing. Battery devices report when they next wake up.</li>
 <li>Get a replacement {e(machine)}. {install_step}</li>
 <li>Connect it to the network, plug in the radio stick(s), power it on and wait 10 to 20 minutes.</li>
 <li>Open <b>http://homeassistant.local:8123</b> in a browser (or the address your router shows for it).</li>
-<li>Choose <b>Restore from backup</b>, then {restore_from}. Pick the newest backup and enter the
-<b>backup encryption key</b>.</li>
+<li>On the Welcome screen, under <b>Or restore</b>, choose {restore_from} and pick the newest backup.</li>
+<li>Under <b>Select what to restore</b>, <b>tick everything, including Apps</b>. Apps are not ticked by default,
+and they include {apps}: without them your radios don't come back. Enter the <b>backup encryption key</b>
+and press <b>Restore backup</b>.</li>
 <li>Wait for the restore and restart. Your automations, devices and Radio Guard's coordinator backups come back.
 With the same radio stick everything simply starts. If the stick was replaced too, continue with A.</li>
 </ol>
