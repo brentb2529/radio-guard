@@ -674,6 +674,10 @@
           }
         }
       }
+    },
+    "ha_backups": {
+      "title": "Make sure your coordinator backups leave this machine",
+      "description": "Radio Guard keeps your coordinator backups in `/config/{dir}`, so they travel inside Home Assistant's own backups: the ones you restore from if this machine dies. Right now:\n\n{problems}\n\nOpen **Settings > System > Backups** to change Home Assistant's backup settings. This message clears itself once they're fixed."
     }
   }
 }

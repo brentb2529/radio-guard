@@ -62,6 +62,7 @@ from .const import (
     ISSUE_BACKUP_STALE,
     ISSUE_COORDINATOR_DOWN,
     ISSUE_COORDINATOR_REPLACED,
+    ISSUE_HA_BACKUPS,
     ISSUE_NEW_SOURCE,
     NOTIFICATION_FIRST_BACKUP,
     PRE_RESTORE_PREFIX,
@@ -71,6 +72,7 @@ from .const import (
     SOURCE_ZWAVE,
     STARTUP_GRACE_MINUTES,
 )
+from .ha_backup import coverage_problems
 from .storage import BackupRecord, BackupStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -351,7 +353,29 @@ class RadioGuardCoordinator(DataUpdateCoordinator[dict[str, SourceState]]):
         for sid, st in self.states.items():
             self._update_issues(sid, st)
         self._suggest_new_sources()
+        self._check_ha_backups()
         return self.states
+
+    def _check_ha_backups(self) -> None:
+        """Warn when HA's own backups won't carry the coordinator backups off this machine."""
+        problems = coverage_problems(self.hass, *self.schedule)
+        if problems is None:  # can't tell (no backup integration): say nothing either way
+            return
+        if not problems:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_HA_BACKUPS)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_HA_BACKUPS,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_HA_BACKUPS,
+            translation_placeholders={
+                "problems": "\n".join(f"- {p}" for p in problems),
+                "dir": self.root.name,
+            },
+        )
 
     def _down_issue(self, sid: str, st: SourceState) -> tuple[bool, str]:
         """(raise the down issue for ``sid``?, name to show). One issue for a dead two-in-one stick."""

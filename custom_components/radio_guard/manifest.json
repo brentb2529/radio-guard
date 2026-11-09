@@ -2,6 +2,7 @@
   "domain": "radio_guard",
   "name": "Radio Guard",
   "after_dependencies": [
+    "backup",
     "hassio",
     "mqtt",
     "usb",
