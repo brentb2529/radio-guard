@@ -178,8 +178,16 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
    downloads Core; restores need `ha jobs options --ignore-conditions internet_system internet_host`, then
    `ha jobs reset`). Simulated Z-Wave sticks EXIT when their client disconnects: restart `stick.cjs` and the
    VM (guestfwd connects at QEMU start) after any add-on restart/restore.
-   **Not verified:** real hardware; Z2M add-on (needs a real adapter, e.g. SLZB-06 in the VM); ZHA live
-   (unit tests only); Z-Wave NVM write.
+   **Real hardware, ZHA (2026-11-10):** two SMLIGHT SLZB-MR3U PoE coordinators on the house LAN (A 192.168.2.225,
+   B 192.168.2.11; firmware v3.4.5.dev0; radio 0 = EFR32MG24/EZSP on port 6638, radio 1 = CC2674P10/ZNP on 7638;
+   `/ha_info` JSON on port 80). Dev HA (Docker): ZHA formed a network on A (ezsp, `socket://A:6638`), a Third Reality
+   3RSP02028BZ plug joined, Radio Guard backed it up (zigpy backup, EmberZNet 7.4.2.0), the plug was toggled, then
+   the options-flow **replace** wizard with A's cable pulled: stop ZHA -> swap (network address B:6638) -> pre-flight
+   (no warnings) -> restore -> "mains-powered devices back 1 of 1" -> plug toggled on B. B now carries A's
+   coordinator IEEE (24d660fffe76b48a) and the same PAN/ext PAN/channel: **keep A unplugged** (duplicate IEEE+PAN on
+   the air) until its radio is re-formed. Gap found: ZHA `device_count` is 0 with a router joined (zigpy backups
+   only list children) -> count ZHA's device registry instead. Z2M on real hardware (CC2674 via 7638) not yet run.
+   **Not verified:** Z2M add-on (needs a real adapter in the VM); Z-Wave NVM write.
 3. **Tests: 581 passing, CI green.** Gaps: ZHA/Z-Wave migrate+rollback paths only partly covered.
 4. README rewrite per `review/hacs-ux.md` §6: 5-line quick start, "When your coordinator dies"
    checklists (drafts in `review/zigbee.md` and `review/zwave.md` runbook sections), "what this
