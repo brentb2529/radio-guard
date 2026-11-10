@@ -147,6 +147,11 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      The HA OS test VM has a second NIC on the lab LAN (192.168.77.x) and runs Radio Guard + **Cluster
      Guard** (`../cluster-guard`, HACS integration watching the cluster; tests use this venv). See
      `../pve-lab/README.md` for ports, gotchas and measured failover times. Production is untouched.
+   - **Cluster Builder add-on** (`../cluster-builder`, HA add-on): one USB stick image builds the whole cluster
+     (auto-installer answers over HTTP, first-boot script forms the cluster and creates the HA VM, Ingress
+     progress page). The lab was rebuilt from empty disks with it (2026-11-09). Runs in the HA OS test VM as
+     local add-on `local_cluster_builder` (`/local_apps`); drive it with `../haos-vm/ingress.py` / `cbwatch.py`.
+     Nodes it builds trust only its SSH key during the build (then remove it): use the root password to ssh.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
