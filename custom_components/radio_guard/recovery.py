@@ -173,6 +173,36 @@ def _when(value) -> str:
 # --------------------------------------------------------------------------- page
 
 
+def _cluster_section(hass: HomeAssistant) -> str:
+    """If Cluster Guard is installed, say what the cluster looks like and what to do when a node dies."""
+    e = html.escape
+    entries = hass.config_entries.async_loaded_entries("cluster_guard")
+    if not entries:
+        return ""
+    data = getattr(entries[0].runtime_data, "data", None)
+    cg = entries[0].runtime_data
+    if data is None:
+        return ""
+    vmid = getattr(cg, "ha_vmid", None)
+    vm = data.vms.get(vmid) if vmid else None
+    copies = sorted(r.target for r in data.replication.values() if vmid and r.guest == vmid)
+    nodes = ", ".join(f"{n.name} ({'up' if n.online else 'DOWN'})" for n in data.nodes.values())
+    protected = any(r.vmid == vmid for r in data.ha.values()) if vmid else False
+    return f"""
+<h2>The cluster Home Assistant runs on</h2>
+<p>Cluster <b>{e(data.name or "?")}</b>, Proxmox VE {e(data.version or "?")}: {e(nodes)}.
+Home Assistant is VM {vmid or "?"} on <b>{e(vm.node if vm else "?")}</b>; copies on {e(", ".join(copies) or "no other node")};
+failover {"on" if protected else "<b>OFF</b>"}.</p>
+<ol>
+<li><b>One node dies:</b> nothing to do. Home Assistant restarts on another node within about three minutes
+(Cluster Guard raises a Repair and a notification). Fix or replace the node when convenient: reinstall Proxmox
+from the USB stick, rejoin it (see the build plan).</li>
+<li><b>Two nodes die:</b> Home Assistant stops on purpose (no majority). Get one node back and it returns by itself.</li>
+<li><b>The switch dies:</b> looks like all nodes dying. Fix the switch; everything returns by itself.</li>
+</ol>
+"""
+
+
 async def async_render(hass: HomeAssistant, coord: RadioGuardCoordinator) -> str:
     e = html.escape
     host, haos = await _host(hass)
@@ -307,6 +337,7 @@ spare. Radio Guard finds the new stick and picks the right port.</li>
 re-pairing. Battery devices report when they next wake up.</li>
 </ol>
 
+{_cluster_section(hass)}
 <h2>B. The Home Assistant machine dies</h2>
 <ol>
 <li>Get a replacement {e(machine)}. {install_step}</li>

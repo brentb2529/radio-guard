@@ -142,3 +142,35 @@ async def test_options_menu_hands_out_the_link(
     result = await mgr.async_configure(result["flow_id"], {"next_step_id": "recovery_sheet"})
     assert result["reason"] == "recovery_sheet"
     assert result["description_placeholders"]["url"] == f"/{PANEL}"
+
+
+async def test_sheet_lists_the_cluster_when_cluster_guard_is_present(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fakes, seeded
+) -> None:
+    """Loose coupling: no dependency, just a look at Cluster Guard's data if it is loaded."""
+    from homeassistant.config_entries import ConfigEntryState  # noqa: PLC0415
+
+    node = lambda name, online: SimpleNamespace(name=name, online=online)  # noqa: E731
+    cg_data = SimpleNamespace(
+        name="house",
+        version="9.2.20",
+        nodes={"pve1": node("pve1", True), "pve2": node("pve2", True), "pve3": node("pve3", False)},
+        vms={100: SimpleNamespace(vmid=100, name="homeassistant", node="pve2")},
+        replication={
+            "100-0": SimpleNamespace(guest=100, target="pve1"),
+            "100-1": SimpleNamespace(guest=100, target="pve3"),
+        },
+        ha={"vm:100": SimpleNamespace(vmid=100)},
+    )
+    cg = MockConfigEntry(domain="cluster_guard", title="Cluster house")
+    cg.add_to_hass(hass)
+    cg.mock_state(hass, ConfigEntryState.LOADED)
+    cg.runtime_data = SimpleNamespace(data=cg_data, ha_vmid=100)
+    coord = await setup_rg(hass, mock_config_entry)
+    page = await async_render(hass, coord)
+    assert "The cluster Home Assistant runs on" in page
+    assert "pve3 (DOWN)" in page
+    assert "VM 100 on <b>pve2</b>" in page
+    assert "copies on pve1, pve3" in page
+    assert "failover on" in page
+    assert "One node dies:" in page
