@@ -155,7 +155,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      build key before the others joined (fixed: the last joiner removes it). Runs in the HA OS test VM as local
      add-on `local_cluster_builder` (`/local_apps`); `../haos-vm/ingress.py` / `cbwatch.py` drive it headless.
      Rebuilding its image needs internet in the VM = lab pve1 up. Nodes it builds: ssh with the root password
-     (`../pve-lab/pvessh.sh N cmd`). Cluster Guard 0.1.1 re-authenticates (root password once) when the cluster
+     (`../pve-lab/pvessh.sh N cmd`). Cluster Guard 0.1.1 (released 2026-11-10) re-authenticates (root password once) when the cluster
      was rebuilt and its token died; the reauth dialog was verified in the UI up to the password entry.
      **Move-in** (add-on 0.1.1): Build takes a backup through the Supervisor (`hassio_role: backup`; that role
      cannot list add-ons or read jobs, so `/supervisor/info` + a foreground backup call), the first node reports
