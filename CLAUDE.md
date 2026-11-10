@@ -149,9 +149,14 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      `../pve-lab/README.md` for ports, gotchas and measured failover times. Production is untouched.
    - **Cluster Builder add-on** (`../cluster-builder`, HA add-on): one USB stick image builds the whole cluster
      (auto-installer answers over HTTP, first-boot script forms the cluster and creates the HA VM, Ingress
-     progress page). The lab was rebuilt from empty disks with it (2026-11-09). Runs in the HA OS test VM as
-     local add-on `local_cluster_builder` (`/local_apps`); drive it with `../haos-vm/ingress.py` / `cbwatch.py`.
-     Nodes it builds trust only its SSH key during the build (then remove it): use the root password to ssh.
+     progress page). On GitHub (brentb2529/cluster-builder, v0.1.0 released; 0.1.1 on main). The lab was rebuilt
+     from empty disks with it twice (2026-11-09, and 2026-11-10 clicked through the page in Chrome: Start over,
+     Build, three nodes Done in ~10 min). The clean re-run found that the first node removed the cluster-wide
+     build key before the others joined (fixed: the last joiner removes it). Runs in the HA OS test VM as local
+     add-on `local_cluster_builder` (`/local_apps`); `../haos-vm/ingress.py` / `cbwatch.py` drive it headless.
+     Rebuilding its image needs internet in the VM = lab pve1 up. Nodes it builds: ssh with the root password
+     (`../pve-lab/pvessh.sh N cmd`). Cluster Guard 0.1.1 re-authenticates (root password once) when the cluster
+     was rebuilt and its token died; the reauth dialog was verified in the UI up to the password entry.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
