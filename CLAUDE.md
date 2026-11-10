@@ -161,7 +161,15 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      cannot list add-ons or read jobs, so `/supervisor/info` + a foreground backup call), the first node reports
      the VM's address, the add-on restores the backup through HA's onboarding API (`/api/onboarding/backup/upload`
      + `/restore`, agent `hassio.local`) and step 5 says when to shut the old box down. Verified in the lab against
-     `pve-lab/fake_onboarding.py` on pve1 (VM 100 has no network); the real Welcome-screen restore is untested.
+     `pve-lab/fake_onboarding.py` on pve1, then (2026-11-10 evening, 0.1.2 on main) against a **real HA OS 18.4 aarch64 VM**
+     built by the stick: restored through the Welcome screen, HA 2026.11.0 back with Radio Guard, Cluster Guard, the
+     three add-ons started and the owner token valid (`http://localhost:18121` through pve1). Real-HA findings fixed
+     on the way: HA OS 18 serves HA on port 80 (probe 8123 and 80), the first-boot landing page answers 401 on
+     /api/* (tell it apart by `/manifest.json`), an onboarded HA 2026 answers 404 on `/api/onboarding`, the backup
+     manager is "busy: blocked" for minutes after start (retry the upload), pmxcfs can lack quorum right after
+     `pvecm create` (wait on `/etc/pve/.members`, restart pve-cluster), and a move-in must resume after an add-on
+     restart. Lab: nodes need 4 GB (pve1 6 GB with a real HA OS VM, else the OOM killer restarts it every 2 min);
+     see `pve-lab/README.md`.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
