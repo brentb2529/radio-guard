@@ -149,7 +149,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      `../pve-lab/README.md` for ports, gotchas and measured failover times. Production is untouched.
    - **Cluster Builder add-on** (`../cluster-builder`, HA add-on): one USB stick image builds the whole cluster
      (auto-installer answers over HTTP, first-boot script forms the cluster and creates the HA VM, Ingress
-     progress page). On GitHub (brentb2529/cluster-builder, v0.1.0 released; 0.1.1 on main). The lab was rebuilt
+     progress page). On GitHub (brentb2529/cluster-builder, v0.1.1 released 2026-11-10). The lab was rebuilt
      from empty disks with it twice (2026-11-09, and 2026-11-10 clicked through the page in Chrome: Start over,
      Build, three nodes Done in ~10 min). The clean re-run found that the first node removed the cluster-wide
      build key before the others joined (fixed: the last joiner removes it). Runs in the HA OS test VM as local
