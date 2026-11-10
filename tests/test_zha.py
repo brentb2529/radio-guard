@@ -226,6 +226,21 @@ async def test_identity_device_count_falls_back_to_children(source: ZHASource, f
     assert (await source.async_identity())["device_count"] == 2
 
 
+async def test_device_count_comes_from_the_device_table(source: ZHASource, fake_zha: FakeZHA) -> None:
+    """A router is not a child: with only the backup's tables a real network of one plug counted as 0."""
+    live = make_backup(nwk_addresses={}, children=[])
+    fake_zha.set_live(live)
+    fake_zha.app.backups.create_backup.return_value = live
+    me = live.node_info.ieee
+    fake_zha.app.devices = {
+        me: object(),
+        t.EUI64.convert(CHILD): object(),
+        t.EUI64.convert("00:15:8d:00:01:dd:ee:ff"): object(),
+    }
+    assert (await source.async_identity())["device_count"] == 2
+    assert (await source.async_backup()).meta["device_count"] == 2
+
+
 async def test_identity_without_entry_or_network(source: ZHASource, fake_zha: FakeZHA) -> None:
     fake_zha.entry_error = ValueError("gone")
     fake_zha.app.state = SimpleNamespace(network_info=None, node_info=None)

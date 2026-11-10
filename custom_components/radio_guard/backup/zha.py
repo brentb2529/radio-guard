@@ -44,6 +44,18 @@ PING_TIMEOUT = 15
 IEEE_KEY = "allow_ieee_overwrite"
 
 
+def _device_count(app: Any, ni: Any) -> int | None:
+    """Devices on the network: zigpy's device table minus the coordinator. The backup's own tables
+    (nwk_addresses, children) only list child end devices, so a network of routers would count as empty."""
+    devices = getattr(app, "devices", None)
+    if isinstance(devices, dict) and devices:
+        me = getattr(getattr(getattr(app, "state", None), "node_info", None), "ieee", None)
+        return sum(1 for ieee in devices if me is None or ieee != me)
+    if ni is None:
+        return None
+    return len(ni.nwk_addresses or {}) or len(ni.children or [])
+
+
 class ZHASource(BackupSource):
     """Backup via ZHA's zigpy application controller."""
 
@@ -100,11 +112,7 @@ class ZHASource(BackupSource):
             "model": getattr(node, "model", None),
             "manufacturer": getattr(node, "manufacturer", None),
             "version": getattr(node, "version", None),
-            "device_count": len(ni.nwk_addresses)
-            if ni and ni.nwk_addresses
-            else len(ni.children or [])
-            if ni
-            else None,
+            "device_count": _device_count(app, ni),
         }
 
     # ------------------------------------------------------------ backup
@@ -123,7 +131,7 @@ class ZHASource(BackupSource):
             "extended_pan_id": norm_hex(ni.extended_pan_id),
             "channel": ni.channel,
             "nwk_update_id": ni.nwk_update_id,
-            "device_count": len(ni.nwk_addresses) or len(ni.children),
+            "device_count": _device_count(app, ni),
             "source": ni.source,
             "stack": next(iter(ni.stack_specific or {}), None),
             "model": node.model,
