@@ -170,6 +170,14 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      `pvecm create` (wait on `/etc/pve/.members`, restart pve-cluster), and a move-in must resume after an add-on
      restart. Lab: nodes need 4 GB (pve1 6 GB with a real HA OS VM, else the OOM killer restarts it every 2 min);
      see `pve-lab/README.md`.
+     **Network install (add-on 0.2.0, 2026-11-10 evening):** step 1 chooses network (default) or stick. The add-on serves
+     iPXE (Debian `ipxe` package, all arches) over its own TFTP on UDP 69 plus `autoexec.ipxe` chaining to
+     `/boot/<mac>`; an assigned node gets kernel + initrd (extracted from the built ISO at Build) and the ISO itself as
+     `/proxmox.iso` (the installer's init looks for it there); anyone else is told to boot from disk. Unknown machines
+     are listed under step 4 with "This is pveN" buttons; network installs reboot instead of powering off. Verified
+     in the lab (pve3 removed and reinstalled over the network, joined, key removed again; see `pve-lab/README.md`:
+     the lab boots iPXE from a USB FAT image because QEMU's edk2 has no PXE client; no `bootindex`). Needs 4 GB on
+     the box. Gap: a node reinstalled after all three joined needs the build key put back by hand (DOCS says how).
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
