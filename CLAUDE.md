@@ -170,7 +170,7 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      `pvecm create` (wait on `/etc/pve/.members`, restart pve-cluster), and a move-in must resume after an add-on
      restart. Lab: nodes need 4 GB (pve1 6 GB with a real HA OS VM, else the OOM killer restarts it every 2 min);
      see `pve-lab/README.md`.
-     **Network install (add-on 0.2.0, 2026-11-10 evening):** step 1 chooses network (default) or stick. The add-on serves
+     **Network install (add-on 0.2.0, released 2026-11-10):** step 1 chooses network (default) or stick. The add-on serves
      iPXE (Debian `ipxe` package, all arches) over its own TFTP on UDP 69 plus `autoexec.ipxe` chaining to
      `/boot/<mac>`; an assigned node gets kernel + initrd (extracted from the built ISO at Build) and the ISO itself as
      `/proxmox.iso` (the installer's init looks for it there); anyone else is told to boot from disk. Unknown machines
