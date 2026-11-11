@@ -184,6 +184,14 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      Verified with a real PXE client (`pve-lab/pxe-client.sh`, SeaBIOS + iPXE ROM on the lab hub, pve1 dnsmasq as the
      router): DHCP from dnsmasq, boot file from the add-on, script chained, machine listed under step 4. Secure Boot must
      be off (unsigned loader; docs say so). Not covered: UEFI PXE firmware (no QEMU x86 UEFI net stack here) = tomorrow's MeLE run.
+     Driving the page by hand (Chrome, 2026-11-10 night) found and fixed: the 3 s poll refilled the form over unsaved edits
+     (now nothing is refilled while dirty); a node that took the installer and went silent sat at "sending the installer"
+     (now its card explains: too little memory = kernel panic, or it booted from disk, and what to do); VM sizes are no
+     longer typed (0 = automatic: memory half the first node's 2-8 GB, cores half, disk 2x this HA's use >= 32 GB, capped
+     at half the pool; decided in firstboot.sh); the VM MAC field says it is made up for the VM and shows this host's
+     IP/MAC. Network install needs 8 GB on the box (page/DOCS), lab nodes `RAM=6144`. Lab now has its own DHCP
+     (`pve-lab/router.py`) and NAT/DNS gateway VM (`pve-lab/gw.sh`, 192.168.77.2) so add-on rebuilds and the HA VM's
+     internet no longer depend on pve1; `pxe/ipxe-disk.img` boots `autoboot net1` (real PXE flow via ProxyDHCP).
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
