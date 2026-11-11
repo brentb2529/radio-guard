@@ -225,6 +225,20 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      `ha apps logs` is capped at 100 lines (watchers that diff the whole log repeat lines). Found after the run: the
      firstboot disk floor read qemu-img's child-node size (sed first match) -> top-level key via python (4b907d5, verified
      on pve1 by command, not by a full run).
+     **Run 3 (2026-11-11 15:10-17:02, page only, 4b907d5 then 3ca3049):** the disk fix holds (pve1: "32 GB disk" at sizing and
+     VM creation), Cluster Guard set up before the backup, 3 nodes Done 15:19. Then the new HA OS VM's Core image download
+     stalled at 77% (Docker pull from pkg-containers.githubusercontent.com crawled and got "connection reset"; curl from the
+     same VM got 20 MB/s; cause not found, Supervisor/Docker/VM restarts did not help, a retried `docker pull` loop did);
+     the add-on gave up after its 60 min, "Try the move again" (VM address prefilled) uploaded, and the restore was refused:
+     `'BackupManager.do_restore_partial' blocked from execution, system is not running - freeze`. ROOT CAUSE: the cluster
+     replicates the VM every minute (two jobs), Proxmox freezes the guest through the QEMU guest agent for each snapshot,
+     and HA OS's qemu-ga fsfreeze hook freezes the Supervisor's backup manager for ~8 s each time (journal: "executing
+     fsfreeze hook with arg 'freeze'"); a restore asked in that window is refused. Fixed: the restore is asked again while
+     frozen/busy (3ca3049, tested); the wait message now says what it sees (nothing / landing page downloading Core /
+     Core starting, minutes waited; aef3d8f). Second retry: uploaded, restored, "Moved in" 17:02, restored HA RUNNING with
+     radio_guard/cluster_guard/zwave_js, "Cluster house" loaded, 3 nodes online, HA on pve1. HA OS console over serial:
+     `socat - UNIX-CONNECT:/var/run/qemu-server/100.serial0` on pve1, log in as root (no password), `ha ...` CLI; no
+     python3/getent there; write long output to /tmp and cat it; a %-sign in a printf'd command breaks it.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
