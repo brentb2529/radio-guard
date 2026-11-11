@@ -178,6 +178,12 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      in the lab (pve3 removed and reinstalled over the network, joined, key removed again; see `pve-lab/README.md`:
      the lab boots iPXE from a USB FAT image because QEMU's edk2 has no PXE client; no `bootindex`). Needs 4 GB on
      the box. Gap: a node reinstalled after all three joined needs the build key put back by hand (DOCS says how).
+     **ProxyDHCP (add-on 0.2.1 on main, 2026-11-10 night):** no router change needed: the add-on (now `host_network`) answers
+     PXE DISCOVERs on UDP 67 (offer with no address, boot server = itself, loader by option 93 arch; iPXE user class gets
+     `autoexec.ipxe`) and boot-server REQUESTs on 4011; the router's option 66/67 is only the fallback shown when 67 is taken.
+     Verified with a real PXE client (`pve-lab/pxe-client.sh`, SeaBIOS + iPXE ROM on the lab hub, pve1 dnsmasq as the
+     router): DHCP from dnsmasq, boot file from the add-on, script chained, machine listed under step 4. Secure Boot must
+     be off (unsigned loader; docs say so). Not covered: UEFI PXE firmware (no QEMU x86 UEFI net stack here) = tomorrow's MeLE run.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
