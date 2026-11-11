@@ -191,7 +191,17 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      at half the pool; decided in firstboot.sh); the VM MAC field says it is made up for the VM and shows this host's
      IP/MAC. Network install needs 8 GB on the box (page/DOCS), lab nodes `RAM=6144`. Lab now has its own DHCP
      (`pve-lab/router.py`) and NAT/DNS gateway VM (`pve-lab/gw.sh`, 192.168.77.2) so add-on rebuilds and the HA VM's
-     internet no longer depend on pve1; `pxe/ipxe-disk.img` boots `autoboot net1` (real PXE flow via ProxyDHCP).
+     internet no longer depend on pve1; `pxe/ipxe-disk.img` boots `autoboot` (real PXE flow via ProxyDHCP).
+     **Full UI-driven network run (2026-11-11 00:00-01:00, add-on 0.2.1 on main):** Start over, settings, Build, three
+     empty nodes assigned by clicking, installed over the lab LAN through ProxyDHCP (gateway VM `pve-lab/gw.sh` = dnsmasq
+     DHCP/DNS + NAT, nodes have only the two NICs a real box has: the Proxmox installer runs ONE `dhclient -v` over all
+     ports and fetches answers through the first lease), first boot, cluster of 3, build key removed, HA VM sized by the
+     node (2950 MB/1 core/9 GB), move-in: backup uploaded and restored by the new HA OS (add-ons + Core reinstalled,
+     slow on the TCG VM). Fixed on the way: Save wiped machine assignments; VM creation raced the joins ("cluster not
+     ready - no quorum?" -> retry with quorum wait); failed first boot not retryable (stub re-arms it); move-in
+     failed on a transient 404 and on "Server disconnected" when HA restarted into the restore (now waits, counts a
+     set-up HA as done once uploaded); node cards show hand-over progress + step bar; lists update in place. Lab
+     screens: `screendump` on the node monitor socket + `sips`; keys via `sendkey`; HA VM serial via socat on pve1.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
