@@ -202,6 +202,17 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      failed on a transient 404 and on "Server disconnected" when HA restarted into the restore (now waits, counts a
      set-up HA as done once uploaded); node cards show hand-over progress + step bar; lists update in place. Lab
      screens: `screendump` on the node monitor socket + `sips`; keys via `sendkey`; HA VM serial via socat on pve1.
+     **CLEAN run (2026-11-11 08:34-09:00, add-on main e3b253e):** old nodes deleted, add-on rebuilt from main, then ONLY
+     the page in Chrome (ingress URL direct: the HA iframe hides the page from the Chrome tools): Start over, Save (root
+     password left blank = kept), Build again, three nodes on with `NETBOOT=1 RAM=6144 ./lab.sh start`, listed within
+     seconds, "This is pveN" x3 (find the button again right before each click: the list rebuilds), nothing else touched.
+     Installers 08:39, all three Done + key removed 08:46, VM 100 (HA-managed, 2950 MB/1 core, 32 GB) got .100 at 08:46,
+     move-in uploaded/restored, "Moved in" 08:58, restored HA RUNNING at 09:00 with radio_guard, cluster_guard, zwave_js,
+     old owner token valid; cluster quorate 3/3. Found before the run: Start over kept boot_mac (an old node rebooting would
+     have been wiped without a click) -> cleared (15cf1da). Found after: firstboot said "9 GB disk" for a 32 GB disk (the
+     HA OS image is 32 GB, qm resize cannot shrink) -> floor at the image size; step 5 said :8123 while the move used :80
+     -> the move-in records its URL; "restoring your backup" repeated; "No machine has asked" shown with all assigned
+     (e3b253e). `ha apps logs` only shows move-in lines (state.log does not log); node phases are on the page.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
