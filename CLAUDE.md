@@ -213,6 +213,18 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      HA OS image is 32 GB, qm resize cannot shrink) -> floor at the image size; step 5 said :8123 while the move used :80
      -> the move-in records its URL; "restoring your backup" repeated; "No machine has asked" shown with all assigned
      (e3b253e). `ha apps logs` only shows move-in lines (state.log does not log); node phases are on the page.
+     **Cluster Guard set up by the add-on (e355f8a, run 2026-11-11 12:45-13:35, clean, page only):** the user asked why the
+     last step told them to add Cluster Guard by hand. Now the first node's first boot makes Cluster Guard's own
+     Proxmox login (pveum: user homeassistant@pve, role ClusterGuard = Cluster Guard's CG_PRIVS, token cluster_guard,
+     privsep 0) and POSTs it to `/cluster_guard/<node>/<secret>`; the add-on walks Cluster Guard's config flow through
+     the Supervisor's Core proxy (`/core/api/config/config_entries/flow`, method token, ha_vmid) after deleting an older
+     "Cluster <name>" entry, THEN takes the move-in backup (moved out of Build: fresh, carries the entry). Verified: entry
+     "Cluster house" loaded in the test HA before the backup, and in the restored HA on the cluster (3 nodes online, HA on
+     pve1, failover started); step 5 ends with "Cluster Guard watches the cluster from it. Shut this machine down".
+     The SSH add-on's token gets 401 on `/core/api` (no homeassistant_api); the Cluster Builder token works.
+     `ha apps logs` is capped at 100 lines (watchers that diff the whole log repeat lines). Found after the run: the
+     firstboot disk floor read qemu-img's child-node size (sed first match) -> top-level key via python (4b907d5, verified
+     on pve1 by command, not by a full run).
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
