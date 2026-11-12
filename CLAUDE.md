@@ -274,6 +274,13 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      HA on pve1, both replication jobs skip-freeze-fs from the first boot, no OOM kill on pve1, quorum 3/3.
      Screenshot: claude-chrome-screenshots-6rzemZ/screenshot-1794451737573-4.jpg. Only ssh reads (dmesg/qm status) were
      done mid-run, nothing changed. This is the baseline for the real-hardware run.
+     **By the book (2026-11-12 00:30):** the test VM now carries HACS 2.0.5 (manual zip install) and Cluster Builder
+     installed FROM THE STORE repository (slug `a4457085_cluster_builder`, ingress
+     `/api/hassio_ingress/Bv9dLZQOSLS2qP7EGmrbbHI3kr4CmUItO5zEvthKBcA/`; the local add-on and /local_apps copy are gone;
+     `cbwatch.py` uses the new slug). Radio Guard / Cluster Guard are to be installed through HACS custom repositories
+     (user's GitHub login) replacing the hand-copied folders; Radio Guard's release v0.1.0 is older than main.
+     For the real boxes: `BRIDGE=en0 sudo ./vm.sh start` (haos-vm) bridges the VM onto the house LAN (vmnet needs root);
+     the boxes must be on the same segment as the Mac's chosen port; step 1 > Advanced address must be the house one.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
