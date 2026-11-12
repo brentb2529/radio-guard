@@ -239,6 +239,22 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      radio_guard/cluster_guard/zwave_js, "Cluster house" loaded, 3 nodes online, HA on pve1. HA OS console over serial:
      `socat - UNIX-CONNECT:/var/run/qemu-server/100.serial0` on pve1, log in as root (no password), `ha ...` CLI; no
      python3/getent there; write long output to /tmp and cat it; a %-sign in a printf'd command breaks it.
+     **Run 4 (2026-11-11 17:36-19:08, page only, 3ca3049 deployed):** Start over, Save, Build, 3 nodes Done 17:43, Cluster
+     Guard set up, VM 32 GB; the new VM's Core download stalled AGAIN (701 MB, then 540 MB on a fresh pull with the
+     freeze off: not the freeze). The Mac was the real shortage: 3 nodes x 6 GB + test VM 2.5 GB + gw on 24 GB = 10 GB
+     of swap in use; the 1-core TCG guest drains a TCP flow so slowly that the gw's slirp drops it silently, and
+     Docker's resume of the broken layer never transfers (restart Supervisor/Docker/VM: no help; a solo `docker pull`
+     only after `systemctl stop hassos-supervisor`; the Supervisor wanted 2026.11.1, not .0). Got through by building
+     the image as an OCI tar on pve1 (`curl` blobs at 55 MB/s, python; see the scratch oci.py idea: index.json with
+     org.opencontainers.image.ref.name, `docker load` over the lab LAN from `python3 -m http.server` on pve1), but
+     building it in pve1's RAM-backed /tmp OOM-killed the HA VM (HA manager restarted it in 10 s): use /root. Then
+     "Try the move again" -> uploaded, restored, Moved in 19:08, restored HA RUNNING, Cluster house loaded, 3 nodes.
+     Fixes from the day, all pushed: restore retried through a freeze (3ca3049), replication jobs with skip-freeze-fs
+     (a38282b: Proxmox freezes the guest via the agent for every replication snapshot; HA OS's hook then freezes the
+     Supervisor's backup manager; applied by hand to the lab jobs this run), wait message says what it sees (aef3d8f)
+     and the :8123 redirect is not "Core starting" (be5f14d). Not yet exercised from a clean Start over: the
+     skip-freeze-fs line itself. LAB RULE: this Mac cannot run 3 x 6 GB nodes + the test VM + Chrome without swapping;
+     stop the nodes when not testing; the real-hardware run is the clean verification path.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
