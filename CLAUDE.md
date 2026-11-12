@@ -255,6 +255,16 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      and the :8123 redirect is not "Core starting" (be5f14d). Not yet exercised from a clean Start over: the
      skip-freeze-fs line itself. LAB RULE: this Mac cannot run 3 x 6 GB nodes + the test VM + Chrome without swapping;
      stop the nodes when not testing; the real-hardware run is the clean verification path.
+     **Run 5, CLEAN (2026-11-11 19:13-20:08, page only, main be5f14d incl. a38282b):** smaller lab: `./lab.sh netinstall-all`
+     installs the nodes one at a time (installer at 6 GB with -no-reboot, then restarted from disk: pve1 6144/4 cores,
+     pve2+pve3 3072/2; pve1 at 5120 OOM-killed the HA VM once, so 6144 stays). Start over, Save, Build, "This is pveN"
+     x3 as each appeared (pve2 waited 14 min for its click and iPXE gave up after 10 -> firmware menu; booted it from
+     the stick via the firmware Boot Manager; add-on now waits 30 min, de6ee4d). Nothing else touched: 3 Done + key
+     removed 19:48, VM 2447 MB/2 cores/32 GB, Cluster Guard before the backup, Core downloaded fully (no stall with
+     the Mac not swapping), upload retried through "busy", restore accepted 19:48, Moved in 20:08, restored HA RUNNING
+     20:09 with radio_guard/cluster_guard/zwave_js, Cluster house loaded, 3 nodes, HA on pve1; both replication jobs
+     carry skip-freeze-fs FROM THE FIRST BOOT (verified in /etc/pve/replication.cfg). The HA manager restarted the VM
+     after the one OOM in ~10 s (failover works). Screenshot: claude-chrome-screenshots-6rzemZ/screenshot-1794445795871-3.jpg.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
