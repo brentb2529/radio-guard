@@ -265,6 +265,15 @@ kills hass here (no supervisor) — use `./start_hass.sh`.
      20:09 with radio_guard/cluster_guard/zwave_js, Cluster house loaded, 3 nodes, HA on pve1; both replication jobs
      carry skip-freeze-fs FROM THE FIRST BOOT (verified in /etc/pve/replication.cfg). The HA manager restarted the VM
      after the one OOM in ~10 s (failover works). Screenshot: claude-chrome-screenshots-6rzemZ/screenshot-1794445795871-3.jpg.
+     **Run 6, CLEAN AND UNTOUCHED (2026-11-11 21:18-21:48, main de6ee4d deployed, page only, no CLI/API in the add-on's
+     flow after power-on):** Start over, Save, Build, `./lab.sh netinstall-all` (= turning the boxes on), "This is pveN"
+     x3 each within a minute of appearing (21:19, 21:22, 21:24; re-find the button right before the click, the list
+     rebuilds). Then nothing: pve1 Done 21:25, VM 2950 MB/2 cores/32 GB, Cluster Guard before the backup, pve2 21:27,
+     pve3 21:30 + key removed, Core downloaded in full, upload retried through 404, restore accepted 21:37, Moved in
+     21:48, restored HA RUNNING 21:48:50 with radio_guard/cluster_guard/zwave_js, Cluster house loaded, 3 nodes online,
+     HA on pve1, both replication jobs skip-freeze-fs from the first boot, no OOM kill on pve1, quorum 3/3.
+     Screenshot: claude-chrome-screenshots-6rzemZ/screenshot-1794451737573-4.jpg. Only ssh reads (dmesg/qm status) were
+     done mid-run, nothing changed. This is the baseline for the real-hardware run.
    - CI tests HA 2026.2 only (newest pytest-homeassistant-custom-component pins it); the dev HA and the VM
      (2026.10) are where newer-HA breakage shows up (two bugs found that way). Re-check both before releases.
    **UI-verified (clean runs):** Z2M: failure detection -> Repair -> replace wizard (Docker path) -> devices
